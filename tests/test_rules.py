@@ -1,0 +1,90 @@
+from jobfit import rules
+from jobfit.pipeline import APPLY, SKIP, screen
+from jobfit.profile import DEFAULT_PROFILE
+from jobfit.rules import FAIL, PASS, UNCLEAR, WARN
+
+
+def status(r):
+    return r[0].status if isinstance(r, tuple) else r.status
+
+
+# ---------------- step 1
+def test_citizenship_hits():
+    for jd in [
+        "Applicants must be U.S. citizens due to contract requirements.",
+        "US Citizenship is required for this position.",
+        "Must have an active Secret security clearance.",
+        "This role requires permanent work authorization in the United States.",
+        "Candidates must be a US citizen or permanent resident.",
+        "This position is subject to ITAR and requires U.S. person status.",
+    ]:
+        assert status(rules.check_citizenship(jd)) == FAIL, jd
+
+
+def test_citizenship_ignores_eeo_and_negation():
+    for jd in [
+        "We are an equal opportunity employer without regard to race, religion, or citizenship status.",
+        "U.S. citizenship is not required for this role.",
+        "Security clearance is not required.",
+    ]:
+        assert status(rules.check_citizenship(jd)) == PASS, jd
+
+
+# ---------------- step 2
+def test_visa():
+    assert status(rules.check_visa("We are unable to sponsor visas for this role.")) == FAIL
+    assert status(rules.check_visa("Must be authorized to work without sponsorship now or in the future.")) == FAIL
+    assert status(rules.check_visa("We do not offer visa sponsorship.", reject_no_sponsorship=False)) == WARN
+    assert rules.check_visa("H-1B sponsorship is available for this role.")[1] == "h1b"
+    assert rules.check_visa("International students on F-1 OPT/CPT are welcome to apply.")[1] == "opt_cpt"
+    assert status(rules.check_visa("Great benefits and snacks.")) == UNCLEAR
+
+
+# ---------------- step 3  (candidate graduates Dec 2027)
+def grad(jd):
+    return rules.check_graduation(jd, 2027, 12).status
+
+
+def test_graduation():
+    assert grad("Candidates graduating between December 2026 and June 2027.") == FAIL
+    assert grad("Expected graduation between May 2027 and December 2027.") == PASS
+    assert grad("Must be graduating by June 2028.") == PASS
+    assert grad("Must have graduated by May 2026.") == FAIL
+    assert grad("Open to the Class of 2027.") == PASS
+    assert grad("Open to the Class of 2026.") == FAIL
+    assert grad("Must be returning to school after the internship.") == PASS
+    assert grad("You love data.") == UNCLEAR
+
+
+# ---------------- step 4 fallback + pipeline
+RESUME = "Python, SQL, pandas, scikit-learn, statistics, A/B testing, Tableau, machine learning, AWS"
+
+
+def test_sde_role_skipped():
+    jd = ("Software Engineer Intern. Requirements: C++, Java, distributed systems, system design, "
+          "Kubernetes, microservices. " * 3)
+    profile = {**DEFAULT_PROFILE, "resume": RESUME, "use_llm": False}
+    assert screen(jd, profile).decision == SKIP
+
+
+def test_ds_role_applies():
+    jd = ("Data Science Intern, credit risk team. We welcome international students on CPT. "
+          "Requirements: Python, SQL, statistics, machine learning, A/B testing, Tableau. "
+          "Knowledge of credit risk and probability is a plus.")
+    profile = {**DEFAULT_PROFILE, "resume": RESUME, "use_llm": False}
+    v = screen(jd, profile)
+    assert v.decision == APPLY, v
+
+
+def test_citizenship_short_circuits():
+    jd = "Data Scientist. Python, SQL. Must be a U.S. citizen. H-1B sponsorship is available."
+    v = screen(jd, {**DEFAULT_PROFILE, "resume": RESUME}, api_key="should-not-be-used")
+    assert v.decision == SKIP and len(v.steps) == 1
+
+
+# ---------------- per-user config export / import
+def test_profile_roundtrip_drops_unknown_keys():
+    from jobfit.profile import profile_from_json, profile_to_json
+    p = {**DEFAULT_PROFILE, "resume": "Python SQL", "grad_month": 3, "evil": "x"}
+    back = profile_from_json(profile_to_json(p))
+    assert back["resume"] == "Python SQL" and back["grad_month"] == 3 and "evil" not in back

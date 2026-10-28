@@ -1,0 +1,8 @@
+# personal data — never commit your resume
+data/
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+.pytest_cache/
