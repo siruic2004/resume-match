@@ -31,7 +31,10 @@ production software development as the main job).
    Mark have=true only if the resume shows it (directly or by clearly equivalent experience).
    A REQUIRED sde_out_of_scope skill the candidate lacks is a blocker. Preferred/nice-to-have ones are not.
 Then give fit_score 0–100 for how competitive this resume is for this JD (ignore visa), \
-and list concrete resume tweaks that would raise the match (only truthful re-framing of existing experience)."""
+and difficulty 0–100 for how hard it is for THIS candidate to get an interview \
+(seniority, years of experience, degree level, how selective the company/team is, how many \
+nice-to-haves they lack; 0 = easy, 100 = very hard). \
+Finally list concrete resume tweaks that would raise the match (only truthful re-framing of existing experience)."""
 
 
 class SkillItem(BaseModel):
@@ -55,6 +58,8 @@ class FitReport(BaseModel):
     sde_blockers: list[str] = Field(description="required out-of-scope SDE skills the candidate lacks")
     other_must_have_issues: list[str] = Field(description="violations of the candidate's extra must-have conditions")
     fit_score: int = Field(ge=0, le=100)
+    difficulty: int = Field(ge=0, le=100, description="how hard to get an interview, 0 easy – 100 very hard")
+    difficulty_reason: str = Field(description="one short sentence, in Chinese")
     summary: str = Field(description="2–3 sentences, in Chinese, on whether to apply and why")
     resume_tips: list[str]
 

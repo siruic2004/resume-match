@@ -88,3 +88,21 @@ def test_profile_roundtrip_drops_unknown_keys():
     p = {**DEFAULT_PROFILE, "resume": "Python SQL", "grad_month": 3, "evil": "x"}
     back = profile_from_json(profile_to_json(p))
     assert back["resume"] == "Python SQL" and back["grad_month"] == 3 and "evil" not in back
+
+
+# ---------------- multi-job comparison
+def test_difficulty_heuristic():
+    easy, _ = rules.estimate_difficulty("Data Science Intern. Python and SQL.", "Data Science Intern")
+    hard, why = rules.estimate_difficulty("Requires 5+ years of experience. PhD required.", "Senior Data Scientist")
+    assert easy < 40 < 80 <= hard and "PhD" in why
+
+
+def test_rank_jobs_caps_and_skips():
+    from jobfit.pipeline import MAYBE, Verdict, rank_jobs
+    a = Verdict(APPLY, 85, "", difficulty=30, title="A")   # 73
+    b = Verdict(APPLY, 90, "", difficulty=80, title="B")   # 58
+    c = Verdict(MAYBE, 60, "", difficulty=10, title="C")   # 56
+    d = Verdict(SKIP, 95, "", difficulty=0, title="D")     # hard fail: never recommended
+    ranked = rank_jobs([d, c, b, a], max_apply=2)
+    assert [v.title for v, _ in ranked] == ["A", "B", "C", "D"]
+    assert [rec for _, rec in ranked] == [True, True, False, False]

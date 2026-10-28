@@ -130,12 +130,39 @@ ul.tips { margin: 0; padding-left: 20px; display: flex; flex-direction: column; 
 .hist .item:last-child { border-bottom: 0; }
 .hist .item .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+.modes { width: 100%; max-width: 360px; }
+.multi { width: 100%; max-width: 760px; display: flex; flex-direction: column; gap: 10px; }
+.jobblock { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.jobblock .top { display: flex; gap: 8px; align-items: center; }
+.jobblock .top input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 10px; }
+.jobblock .num { font-family: var(--font-mono); color: var(--muted); font-size: 12px; flex: none; }
+.multibar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+label.f.inline { flex-direction: row; align-items: center; gap: 6px; font-size: 14px; color: var(--ink); }
+.rank td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.rank tr.rec td:first-child { color: var(--go); font-weight: 600; }
+.picks { border: 1px solid var(--go); background: var(--go-bg); border-radius: var(--radius); padding: 12px 14px; }
+.picks.none { border-color: var(--stop); background: var(--stop-bg); }
+details.job > summary { cursor: pointer; padding: 10px 2px; font-weight: 600; }
+details.job > div { display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
 </style>
 
 <div class="wrap">
   <header class="door">
     <h1 class="brand">Job<b>Fit</b></h1>
     <div class="steps" aria-label="筛选顺序"><span>1 公民身份</span><span>2 OPT/CPT/H-1B</span><span>3 毕业时间</span><span>4 技能匹配</span></div>
+    <div class="tabs modes" role="tablist" aria-label="模式">
+      <button role="tab" type="button" id="m-single" aria-selected="true" data-mode="single">单个岗位</button>
+      <button role="tab" type="button" id="m-multi" aria-selected="false" data-mode="multi">同公司多岗位对比</button>
+    </div>
+    <div class="multi" id="multiMode" hidden>
+      <p class="hint">同一家公司有多个岗位、但只允许投 1–3 个时用：每个框粘一个完整 JD，按适配度和难度排序，选出最值得投的。</p>
+      <div id="jobBlocks" class="checks"></div>
+      <div class="multibar">
+        <button class="btn small ghost" id="addJob" type="button">+ 再加一个岗位</button>
+        <label class="f inline">最多可投 <select id="maxApply"></select> 个</label>
+        <button class="btn" id="compare" type="button">对比这些岗位</button>
+      </div>
+    </div>
     <form class="search" id="searchForm" role="search">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
       <input id="q" type="text" autocomplete="off" placeholder="粘贴职位链接，或直接把整段 JD 粘进来" aria-label="JD 链接或 JD 文本">
@@ -364,6 +391,19 @@ function checkSkillsKeywords(jd, resume) {
   return [step(name, score >= 60 ? PASS : score >= 40 ? WARN : FAIL, `关键词匹配度 ${score}/100`, ev), score];
 }
 
+function estimateDifficulty(jd, title = "") {
+  const low = jd.toLowerCase(), head = (title + " " + jd.slice(0, 300)).toLowerCase();
+  let score = 35; const why = [];
+  const years = splitSentences(low).filter(s => s.includes("experience"))
+    .flatMap(s => [...s.matchAll(/(\d{1,2})\s*\+?\s*(?:-\s*\d{1,2}\s*)?(?:years?|yrs?)\b/g)].map(m => +m[1])).filter(y => y <= 15);
+  if (years.length) { const y = Math.max(...years); score += 8 * y; why.push(`要求 ${y}+ 年经验`); }
+  if (/ph\.?\s?d[^.]{0,60}\b(?:required|must)|\b(?:required|must)[^.]{0,60}ph\.?\s?d/.test(low)) { score += 20; why.push("要求 PhD"); }
+  else if (/\bph\.?\s?d\b/.test(low)) { score += 8; why.push("PhD 优先"); }
+  if (/\b(?:senior|sr\.?|staff|lead|principal|manager)\b/.test(head)) { score += 15; why.push("高级职位"); }
+  if (/\b(?:intern(?:ship)?|co-?op|new\s+grad|entry[\s-]level|early\s+career)\b/.test(head)) { score -= 10; why.push("实习 / 入门级"); }
+  return [Math.max(0, Math.min(100, score)), why.join("；") || "无明显门槛信号"];
+}
+
 /* ================= Claude (viewer's own account) ================= */
 let sample = null;
 (async () => { try { sample = await window.claude?.use?.("sample"); } catch { sample = null; } })();
@@ -382,7 +422,7 @@ Evaluate in this order:
    - sde_out_of_scope: software-engineering skills that cannot be learned in two weeks (C++, Java/Go backend, distributed systems, system design, frontend/mobile, embedded, low-latency, production software development as the main job).
    - other: degree level, years of experience, soft skills, etc.
    have=true only if the resume shows it (directly or by clearly equivalent experience). A REQUIRED sde_out_of_scope skill the candidate lacks is a blocker; preferred ones are not.
-Give fit_score 0-100 for how competitive this resume is for this JD (ignore visa), and concrete, truthful resume tweaks.
+Give fit_score 0-100 for how competitive this resume is for this JD (ignore visa); difficulty 0-100 for how hard it is for THIS candidate to get an interview (seniority, years of experience, degree level, how selective the company/team is, missing nice-to-haves; 0 easy, 100 very hard); and concrete, truthful resume tweaks.
 
 Candidate visa status: ${p.visa_status}
 Expected graduation: ${months[p.grad_month]} ${p.grad_year}
@@ -402,6 +442,7 @@ Reply with only one JSON object with exactly these keys:
  "graduation_fit": "yes"|"no"|"unclear", "graduation_reasoning": str (in Chinese),
  "skills": [{"skill": str, "category": "core_ds"|"learnable_domain"|"sde_out_of_scope"|"other", "required": bool, "have": bool, "note": str (in Chinese)}],
  "sde_blockers": [str], "other_must_have_issues": [str (in Chinese)], "fit_score": int,
+ "difficulty": int, "difficulty_reason": str (one short sentence in Chinese),
  "summary": str (2-3 sentences in Chinese: apply or not, and why), "resume_tips": [str (in Chinese)]}`;
 }
 
@@ -415,7 +456,25 @@ function decide(steps, score, p) {
   return { decision: "SKIP", score, reason: `匹配度 ${score} 低于阈值 ${t}`, steps };
 }
 
-async function screen(jd, p, ui) {
+async function screen(jd, p, ui, title = "") {
+  const v = await screenCore(jd, p, ui);
+  const rep = v.report;
+  if (rep && Number.isFinite(+rep.difficulty)) { v.difficulty = Math.max(0, Math.min(100, Math.round(+rep.difficulty))); v.difficulty_reason = String(rep.difficulty_reason || ""); }
+  else [v.difficulty, v.difficulty_reason] = estimateDifficulty(jd, v.title || title);
+  return v;
+}
+
+// Fit counts more than difficulty: a strong match at a hard team still beats a weak match at an easy one.
+const DIFFICULTY_WEIGHT = 0.4;
+const priority = (v) => (v.score || 0) - DIFFICULTY_WEIGHT * (v.difficulty || 0);
+function rankJobs(verdicts, maxApply) {
+  const order = { APPLY: 0, MAYBE: 1, SKIP: 2 };
+  const ranked = [...verdicts].sort((a, b) => (a.decision === "SKIP") - (b.decision === "SKIP") || priority(b) - priority(a) || order[a.decision] - order[b.decision]);
+  let picked = 0;
+  return ranked.map(v => { const rec = v.decision !== "SKIP" && picked < maxApply; if (rec) picked++; return [v, rec]; });
+}
+
+async function screenCore(jd, p, ui) {
   const steps = [];
   const s1 = checkCitizenship(jd); steps.push(s1);
   if (s1.status === FAIL) return { decision: "SKIP", score: null, reason: "需要美国公民 / 绿卡 / 安全许可 — 直接放弃，后面不再检查", steps };
@@ -488,7 +547,7 @@ const PILL = { pass: "PASS", fail: "FAIL", warn: "CHECK", unclear: "UNKNOWN" };
 const CAT = { core_ds: "DS 核心", learnable_domain: "可速成领域", sde_out_of_scope: "SDE 超纲", other: "其他" };
 
 function renderResult(v, opts = {}) {
-  const box = $("results"); box.replaceChildren();
+  const box = opts.box || $("results"); box.replaceChildren();
   const head = [v.company, v.title].filter(Boolean).join(" — ");
   box.append(h("div", { class: `verdict ${v.decision}` },
     h("h2", { text: VERDICT[v.decision] }),
@@ -497,6 +556,7 @@ function renderResult(v, opts = {}) {
     h("div", { class: "why", text: v.reason })));
   if (opts.example) box.append(h("p", { class: "small-note", text: "这是用一段示例 JD 和示例简历跑出来的结果。在上面粘贴你的 JD、右边填你的简历，就会换成你的结果。" }));
   if (v.note) box.append(h("div", { class: "notice", text: v.note }));
+  if (v.difficulty != null) box.append(h("p", { class: "small-note", text: `难度 ${v.difficulty}/100 — ${v.difficulty_reason}` }));
 
   box.append(h("div", { class: "checks" }, v.steps.map(s => {
     const d = h("details", { class: "check" },
@@ -557,8 +617,8 @@ for (let y = 2024; y <= 2032; y++) $("gy").append(h("option", { value: y, text: 
 ["resume", "visa", "gy", "gm", "rejectNoSp", "useClaude", "thr", "extra"].forEach(id => $(id).addEventListener("input", readForm));
 ["gy", "gm", "rejectNoSp", "useClaude"].forEach(id => $(id).addEventListener("change", readForm));
 
-document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b ? "true" : "false"));
+document.querySelectorAll(".side .tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".side .tabs button").forEach(x => x.setAttribute("aria-selected", x === b ? "true" : "false"));
   document.querySelectorAll("[data-pane]").forEach(p => p.hidden = p.dataset.pane !== b.dataset.tab);
 }));
 
@@ -634,6 +694,87 @@ $("searchForm").addEventListener("submit", async (e) => {
     history = history.slice(0, 200); store.set("jobfit.history.v1", history); renderHistory();
   } finally { btn.disabled = false; }
 });
+
+/* ================= several jobs at one company ================= */
+document.querySelectorAll(".modes button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".modes button").forEach(x => x.setAttribute("aria-selected", x === b ? "true" : "false"));
+  const multi = b.dataset.mode === "multi";
+  $("multiMode").hidden = !multi;
+  $("searchForm").hidden = multi;
+  document.querySelector(".paste").hidden = multi;
+}));
+for (let n = 1; n <= 5; n++) $("maxApply").append(h("option", { value: n, text: n }));
+$("maxApply").value = 2;
+
+function addJobBlock() {
+  const i = $("jobBlocks").children.length + 1;
+  const rm = h("button", { class: "btn small ghost", type: "button", text: "删除", "aria-label": `删除岗位 ${i}` });
+  const block = h("div", { class: "jobblock" },
+    h("div", { class: "top" }, h("span", { class: "num", text: `#${i}` }),
+      h("input", { type: "text", class: "jname", placeholder: "职位名或链接（可选，用来区分）", "aria-label": `岗位 ${i} 名称` }), rm),
+    h("textarea", { rows: 6, class: "jtext", placeholder: "粘贴这个岗位的完整 JD", "aria-label": `岗位 ${i} JD` }));
+  rm.addEventListener("click", () => { if ($("jobBlocks").children.length > 2) { block.remove(); renumber(); } });
+  $("jobBlocks").append(block);
+}
+function renumber() { [...$("jobBlocks").children].forEach((b, i) => { b.querySelector(".num").textContent = `#${i + 1}`; }); }
+addJobBlock(); addJobBlock();
+$("addJob").addEventListener("click", () => { if ($("jobBlocks").children.length < 10) addJobBlock(); });
+
+$("compare").addEventListener("click", async () => {
+  const jobs = [...$("jobBlocks").children].map((b, i) => ({ name: b.querySelector(".jname").value.trim(), jd: b.querySelector(".jtext").value.trim(), i }))
+    .filter(j => j.jd);
+  const box = $("results");
+  if (jobs.length < 2) { box.replaceChildren(h("div", { class: "notice", text: "至少粘贴 2 个岗位的 JD；只有一个岗位请用「单个岗位」模式。" })); return; }
+  readForm();
+  const btn = $("compare"); btn.disabled = true;
+  ctl = new AbortController();
+  const status = h("span", { text: "" });
+  const stop = h("button", { class: "btn small ghost", type: "button", text: "停止" });
+  stop.addEventListener("click", () => ctl.abort());
+  box.replaceChildren(h("div", { class: "thinking" }, h("span", { class: "dot" }), status, stop));
+  const results = [];
+  try {
+    // one at a time: Claude allows only a couple of calls per viewer at once
+    for (const [k, j] of jobs.entries()) {
+      status.textContent = `正在分析第 ${k + 1} / ${jobs.length} 个岗位${j.name ? "：" + j.name : ""}…`;
+      const v = await screen(j.jd, profile, { signal: ctl.signal, thinking() {} }, j.name);
+      if (!v.title) v.title = j.name || `岗位 #${j.i + 1}`;
+      results.push(v);
+      history.unshift({ time: new Date().toISOString().slice(0, 16).replace("T", " "), verdict: v.decision, score: v.score ?? "",
+        company: v.company || "", title: v.title, url: isUrl(j.name) ? j.name : "", reason: v.reason });
+    }
+  } finally {
+    btn.disabled = false;
+    history = history.slice(0, 200); store.set("jobfit.history.v1", history); renderHistory();
+  }
+  renderComparison(results, +$("maxApply").value);
+});
+
+function renderComparison(results, maxApply) {
+  const box = $("results"); box.replaceChildren();
+  const ranked = rankJobs(results, maxApply);
+  const picks = ranked.filter(([, rec]) => rec).map(([v]) => v);
+  box.append(picks.length
+    ? h("div", { class: "picks" }, h("strong", { text: `建议投这 ${picks.length} 个：` }), picks.map(v => v.title).join("、"))
+    : h("div", { class: "picks none", text: "这些岗位都没通过硬性筛选（公民身份 / 签证 / 毕业时间 / SDE 超纲），建议都不投。" }));
+  const notes = [...new Set(results.map(v => v.note).filter(Boolean))];
+  for (const n of notes) box.append(h("div", { class: "notice", text: n }));
+  box.append(h("div", { class: "tablebox" }, h("table", { class: "rank" },
+    h("thead", null, h("tr", null, ["排名", "职位", "结论", "适配度", "难度", "优先级"].map(t => h("th", { text: t })))),
+    h("tbody", null, ranked.map(([v, rec], i) => h("tr", { class: rec ? "rec" : "" },
+      h("td", { text: (rec ? "★ " : "") + (i + 1) }),
+      h("td", { text: v.title }),
+      h("td", null, h("span", { class: `pill ${v.decision === "APPLY" ? "pass" : v.decision === "SKIP" ? "fail" : "warn"}`, text: v.decision })),
+      h("td", { class: "n", text: v.score ?? "—" }),
+      h("td", { class: "n", text: v.difficulty ?? "—" }),
+      h("td", { class: "n", text: v.decision === "SKIP" ? "—" : Math.round(priority(v)) })))))));
+  box.append(h("p", { class: "small-note", text: `优先级 = 适配度 − ${DIFFICULTY_WEIGHT} × 难度。没通过硬性筛选的岗位排在最后，不会被推荐。` }));
+  ranked.forEach(([v, rec], i) => {
+    const inner = h("div");
+    renderResult(v, { box: inner });
+    box.append(h("details", { class: "job" }, h("summary", { text: `${rec ? "★ " : ""}#${i + 1} ${VERDICT[v.decision]} · ${v.title}` }), inner));
+  });
+}
 
 /* ================= example at rest ================= */
 const EX_JD = `Data Science Intern, Credit Risk Analytics (Summer 2027)

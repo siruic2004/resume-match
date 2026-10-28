@@ -23,6 +23,8 @@ class Verdict:
     report: object | None = None  # llm.FitReport when Claude was used
     title: str = ""
     company: str = ""
+    difficulty: int | None = None  # 0 easy – 100 very hard to get an interview
+    difficulty_reason: str = ""
 
 
 def grad_label(profile: dict) -> str:
@@ -34,6 +36,36 @@ def _skip(steps, reason, **kw) -> Verdict:
 
 
 def screen(jd: str, profile: dict, *, api_key: str = "", model: str = "") -> Verdict:
+    v = _screen(jd, profile, api_key=api_key, model=model)
+    if v.report is not None:
+        v.difficulty, v.difficulty_reason = v.report.difficulty, v.report.difficulty_reason
+    else:
+        v.difficulty, v.difficulty_reason = rules.estimate_difficulty(jd, v.title)
+    return v
+
+
+# Fit counts more than difficulty: a strong match at a hard team still beats a weak match at an easy one.
+DIFFICULTY_WEIGHT = 0.4
+
+
+def priority(v: Verdict) -> float:
+    return (v.score or 0) - DIFFICULTY_WEIGHT * (v.difficulty or 0)
+
+
+def rank_jobs(verdicts: list[Verdict], max_apply: int) -> list[tuple[Verdict, bool]]:
+    """Order jobs for a company that caps applications. Hard SKIPs go last and are
+    never recommended; the top `max_apply` of the rest are marked recommended."""
+    order = {APPLY: 0, MAYBE: 1, SKIP: 2}
+    ranked = sorted(verdicts, key=lambda v: (v.decision == SKIP, -priority(v), order[v.decision]))
+    out, picked = [], 0
+    for v in ranked:
+        rec = v.decision != SKIP and picked < max_apply
+        picked += rec
+        out.append((v, rec))
+    return out
+
+
+def _screen(jd: str, profile: dict, *, api_key: str = "", model: str = "") -> Verdict:
     steps: list[StepResult] = []
 
     # ---- 1. citizenship: hard stop, before anything else

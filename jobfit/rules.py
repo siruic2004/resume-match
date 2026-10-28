@@ -200,6 +200,36 @@ def check_graduation(jd: str, grad_year: int, grad_month: int) -> StepResult:
     return StepResult(step, UNCLEAR, "No explicit graduation window found.", [])
 
 
+# ------------------------------------------------------------ difficulty (fallback)
+
+def estimate_difficulty(jd: str, title: str = "") -> tuple[int, str]:
+    """0 = easy to land an interview, 100 = very hard. Rough keyword heuristic used
+    when Claude isn't available: years of experience, PhD, seniority."""
+    low = jd.lower()
+    head = (title + " " + jd[:300]).lower()
+    score, why = 35, []
+
+    years = [int(n) for s in split_sentences(low) if "experience" in s
+             for n in re.findall(r"(\d{1,2})\s*\+?\s*(?:-\s*\d{1,2}\s*)?(?:years?|yrs?)\b", s)]
+    years = [y for y in years if y <= 15]
+    if years:
+        score += 8 * max(years)
+        why.append(f"要求 {max(years)}+ 年经验")
+    if re.search(r"ph\.?\s?d[^.]{0,60}\b(?:required|must)|\b(?:required|must)[^.]{0,60}ph\.?\s?d", low):
+        score += 20
+        why.append("要求 PhD")
+    elif re.search(r"\bph\.?\s?d\b", low):
+        score += 8
+        why.append("PhD 优先")
+    if re.search(r"\b(?:senior|sr\.?|staff|lead|principal|manager)\b", head):
+        score += 15
+        why.append("高级职位")
+    if re.search(r"\b(?:intern(?:ship)?|co-?op|new\s+grad|entry[\s-]level|early\s+career)\b", head):
+        score -= 10
+        why.append("实习 / 入门级")
+    return max(0, min(100, score)), "；".join(why) or "无明显门槛信号"
+
+
 # ------------------------------------------------------------ 4. skills (fallback)
 
 SDE_SKILLS = {
