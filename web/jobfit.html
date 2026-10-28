@@ -152,7 +152,7 @@ details.job > div { display: flex; flex-direction: column; gap: 12px; padding-bo
 <div class="wrap">
   <header class="door">
     <h1 class="brand">Job<b>Fit</b></h1>
-    <div class="steps" aria-label="筛选顺序"><span>1 公民身份</span><span>2 OPT/CPT/H-1B</span><span>3 毕业时间</span><span>4 技能匹配</span></div>
+    <div class="steps" aria-label="筛选顺序"><span>1 公民身份</span><span>2 OPT/CPT/H-1B</span><span>3 毕业时间</span><span>4 技术门槛</span></div>
     <div class="tabs modes" role="tablist" aria-label="模式">
       <button role="tab" type="button" id="m-single" aria-selected="true" data-mode="single">单个岗位</button>
       <button role="tab" type="button" id="m-multi" aria-selected="false" data-mode="multi">同公司多岗位对比</button>
@@ -380,9 +380,11 @@ const DS = { "Python": /\bpython\b/i, "R": /(?<![\w-])R(?![\w-])/, "SQL": /\bsql
   "Causal inference": /\bcausal\b/i, "Time series": /\btime[\s-]series\b|\bforecast/i, "NLP": /\bnlp\b|\bnatural\s+language/i, "LLM / GenAI": /\bllms?\b|\bgenerative\s+ai\b|\bgenai\b/i,
   "Tableau": /\btableau\b/i, "Power BI": /\bpower\s?bi\b/i, "Looker": /\blooker\b/i, "Excel": /\bexcel\b/i, "Spark": /\bspark\b|\bpyspark\b/i, "Airflow": /\bairflow\b/i,
   "dbt": /\bdbt\b/i, "Snowflake": /\bsnowflake\b/i, "BigQuery": /\bbigquery\b/i, "Databricks": /\bdatabricks\b/i, "AWS": /\baws\b/i, "GCP": /\bgcp\b|\bgoogle\s+cloud\b/i,
-  "Azure": /\bazure\b/i, "ETL": /\betl\b|\belt\b/i, "Data visualization": /\bdata\s+visuali[sz]ation\b/i, "SAS": /\bsas\b/i, "MATLAB": /\bmatlab\b/i, "Git": /\bgit\b/i };
+  "Azure": /\bazure\b/i, "ETL": /\betl\b|\belt\b/i, "Data visualization": /\bdata\s+visuali[sz]ation\b/i, "Dashboards": /\bdashboards?\b/i,
+  "Operations research": /\boperations\s+research\b|\blinear\s+programming\b|\bmixed[\s-]integer\b/i, "SAS": /\bsas\b/i, "MATLAB": /\bmatlab\b/i, "Git": /\bgit\b/i };
 const DOMAINS = { "Finance": /\bfinanc/i, "Accounting": /\baccounting\b/i, "Marketing": /\bmarketing\b/i, "Risk": /\brisk\b/i, "Credit": /\bcredit\b/i, "Fraud": /\bfraud\b/i,
   "Probability": /\bprobabilit/i, "Stochastic": /\bstochastic\b/i, "Actuarial / insurance": /\bactuar|\binsurance\b/i, "Pricing": /\bpricing\b/i, "Supply chain": /\bsupply\s+chain\b/i,
+  "Logistics": /\blogistic(?:s|al)\b/i, "Operations": /\boperations\b(?!\s+research)/i, "Ads": /\badvertis/i,
   "Healthcare": /\bhealthcare\b|\bclinical\b/i, "Econometrics": /\beconometric/i, "Product analytics": /\bproduct\s+analytics\b/i, "CRM": /\bcrm\b/i };
 const hits = (table, text) => Object.keys(table).filter(k => table[k].test(text));
 
@@ -393,11 +395,13 @@ function checkSkillsKeywords(jd, resume) {
   const domains = hits(DOMAINS, jd);
   const matched = jdDs.filter(s => have.has(s)), missing = jdDs.filter(s => !have.has(s));
   let score = jdDs.length ? Math.round(100 * matched.length / jdDs.length) : 50;
-  score = Math.max(0, score - 12 * sdeMissing.length);
-  const ev = [`匹配的 DS 技能：${matched.join(", ") || "—"}`, `缺少的 DS 技能：${missing.join(", ") || "—"}`,
-    `你没有的 SDE 技能：${sdeMissing.join(", ") || "—"}`, `可 1–2 周速成的领域：${domains.join(", ") || "—"}`];
-  if (sdeMissing.length >= 3) return [step(name, FAIL, `看起来是 SDE 岗位（${sdeMissing.length} 项你没有的软件工程技能）`, ev), score];
-  return [step(name, score >= 60 ? PASS : score >= 40 ? WARN : FAIL, `关键词匹配度 ${score}/100`, ev), score];
+  score = Math.max(0, score - 10 * sdeMissing.length);
+  // Industry words are shown but never scored; the job title isn't used at all.
+  const ev = [`岗位的数据技术栈：${jdDs.join(", ") || "—"}`, `你有的：${matched.join(", ") || "—"}`, `你缺的：${missing.join(", ") || "—"}`,
+    `你没有的 SDE 技能：${sdeMissing.join(", ") || "—"}`, `行业知识（不计分，入职后可补）：${domains.join(", ") || "—"}`];
+  if (sdeMissing.length >= 3 && hits(SDE, jd).length >= jdDs.length)
+    return [step(name, FAIL, `技术栈以软件工程为主（${sdeMissing.length} 项你没有的 SDE 技能，数据工具只有 ${jdDs.length} 项）`, ev), score];
+  return [step(name, score >= 60 ? PASS : score >= 40 ? WARN : FAIL, `技术栈匹配度 ${score}/100`, ev), score];
 }
 
 function estimateDifficulty(jd, title = "") {
@@ -478,13 +482,15 @@ Evaluate in this order:
 1. Citizenship: does the JD require U.S. citizenship, green card / permanent work authorization, a security clearance, or ITAR "U.S. person" status? Ignore EEO boilerplate.
 2. Visa: "h1b" = sponsorship explicitly offered; "opt_cpt" = OPT/CPT/F-1 students explicitly welcome; "none_mentioned"; "no_sponsorship" = explicitly will not sponsor now or in the future.
 3. Graduation: compare the candidate's expected graduation with any graduation window, class year, "returning to school", or "must have graduated by" requirement: "yes", "no" or "unclear".
-4. Skills: read the JD's actual requirements, not the job title. For each meaningful required or preferred skill, classify it:
-   - core_ds: Python, SQL, statistics, ML, experimentation, BI/visualization, cloud data tools, etc.
-   - learnable_domain: domain knowledge learnable in 1-2 weeks (finance, marketing, risk, credit, fraud, probability, insurance, pricing, supply chain...).
+4. Skills - judge the TECHNICAL BAR, not the industry and not the job title. For an intern / new grad, industry knowledge (supply chain, logistics, finance, marketing, risk, healthcare, insurance, ads...) is expected to be shallow and is learned on the job in 1-2 weeks: it never lowers the score and is never a blocker. What matters is the tool stack and technical depth of the daily work. A "Supply Chain Analyst" whose work is Python + SQL + dashboards has the same technical bar as a "Data Analyst" -> a good match. A "Data Scientist" whose real work is building backend services in Java/Go is an SDE job -> not a match. Titles mislead in both directions; ignore them.
+   First list tech_stack: the tools and techniques the job actually uses day to day. Then set technical_bar by comparing that stack and its depth with the resume: "matches" = same kind of tools at a depth the resume already shows; "stretch" = same kind of tools but deeper (production ML, advanced causal inference, large-scale Spark...) or one or two missing tools learnable quickly; "above" = the core work needs technical depth the resume is far from (research-level modeling, PhD-level methods, heavy engineering).
+   For each meaningful required or preferred skill, classify it:
+   - core_ds: data tools and methods - Python, R, SQL, Excel, statistics, ML, experimentation, BI/dashboards, ETL, cloud data tools, optimization/forecasting, etc.
+   - learnable_domain: industry / business knowledge of any kind (finance, marketing, risk, supply chain, logistics, operations, healthcare, probability concepts...). Never a blocker.
    - sde_out_of_scope: software-engineering skills that cannot be learned in two weeks (C++, Java/Go backend, distributed systems, system design, frontend/mobile, embedded, low-latency, production software development as the main job).
    - other: degree level, years of experience, soft skills, etc.
    have=true only if the resume shows it (directly or by clearly equivalent experience). A REQUIRED sde_out_of_scope skill the candidate lacks is a blocker; preferred ones are not.
-Give fit_score 0-100 for how competitive this resume is for this JD (ignore visa); difficulty 0-100 for how hard it is for THIS candidate to get an interview (seniority, years of experience, degree level, how selective the company/team is, missing nice-to-haves; 0 easy, 100 very hard); and concrete, truthful resume tweaks.
+Give fit_score 0-100 for how competitive this resume is for this JD (ignore visa), based on tech-stack overlap and technical depth only, never on industry match; difficulty 0-100 for how hard it is for THIS candidate to get an interview (seniority, years of experience, degree level, how selective the company/team is, missing nice-to-haves; 0 easy, 100 very hard); and concrete, truthful resume tweaks.
 
 Candidate visa status: ${p.visa_status}
 Expected graduation: ${months[p.grad_month]} ${p.grad_year}
@@ -502,6 +508,7 @@ Reply with only one JSON object with exactly these keys:
 {"job_title": str, "company": str, "citizenship_blocked": bool, "citizenship_evidence": str,
  "sponsorship": "h1b"|"opt_cpt"|"none_mentioned"|"no_sponsorship", "sponsorship_evidence": str,
  "graduation_fit": "yes"|"no"|"unclear", "graduation_reasoning": str (in Chinese),
+ "tech_stack": [str], "technical_bar": "matches"|"stretch"|"above", "technical_bar_reason": str (one short sentence in Chinese),
  "skills": [{"skill": str, "category": "core_ds"|"learnable_domain"|"sde_out_of_scope"|"other", "required": bool, "have": bool, "note": str (in Chinese)}],
  "sde_blockers": [str], "other_must_have_issues": [str (in Chinese)], "fit_score": int,
  "difficulty": int, "difficulty_reason": str (one short sentence in Chinese),
@@ -511,7 +518,7 @@ Reply with only one JSON object with exactly these keys:
 }
 
 /* ================= pipeline (ported from jobfit/pipeline.py) ================= */
-const LABELS = { 1: "需要公民身份", 2: "不提供签证支持 / 不接受 OPT·CPT", 3: "毕业时间不符", 4: "技能超纲或匹配度过低" };
+const LABELS = { 1: "需要公民身份", 2: "不提供签证支持 / 不接受 OPT·CPT", 3: "毕业时间不符", 4: "技术门槛不符" };
 function decide(steps, score, p) {
   for (let i = 0; i < steps.length; i++) if (steps[i].status === FAIL) return { decision: "SKIP", score, reason: `Step ${i + 1}：${LABELS[i + 1]} — ${steps[i].summary}`, steps };
   const t = p.apply_threshold;
@@ -600,9 +607,15 @@ function mergeClaude(rep, steps, s2, s3, p) {
   if (s3.status === FAIL && gs !== PASS) gs = FAIL;
   steps[2] = step(s3.step, gs, String(rep.graduation_reasoning || s3.summary), s3.evidence);
   const score = Math.max(0, Math.min(100, parseInt(rep.fit_score, 10) || 0));
-  const blockers = arr(rep.sde_blockers);
-  const s4s = blockers.length ? FAIL : (score >= p.apply_threshold ? PASS : WARN);
-  steps.push(step("4. 技能与经历（Claude）", s4s, blockers.length ? `超纲 SDE 技能：${blockers.join(", ")}` : `匹配度 ${score}/100`, arr(rep.other_must_have_issues)));
+  // Step 4 is about the technical bar; industry knowledge never counts against the job.
+  const blockers = arr(rep.sde_blockers), barKey = ["matches", "stretch", "above"].includes(rep.technical_bar) ? rep.technical_bar : "stretch";
+  const bar = { matches: "技术门槛一致", stretch: "技术门槛略高", above: "技术门槛超出" }[barKey], barWhy = String(rep.technical_bar_reason || "");
+  let s4s, s4sum;
+  if (blockers.length) { s4s = FAIL; s4sum = `超纲 SDE 技能：${blockers.join(", ")}`; }
+  else if (barKey === "above") { s4s = FAIL; s4sum = `${bar}：${barWhy}`; }
+  else { s4s = score >= p.apply_threshold && barKey === "matches" ? PASS : WARN; s4sum = `${bar}，匹配度 ${score}/100`; }
+  const stack = arr(rep.tech_stack).length ? [`技术栈：${arr(rep.tech_stack).join(", ")}`] : [];
+  steps.push(step("4. 技能与经历（Claude）", s4s, s4sum, [...stack, barWhy, ...arr(rep.other_must_have_issues)].filter(Boolean)));
   const v = decide(steps, score, p);
   v.report = rep; v.title = rep.job_title; v.company = rep.company;
   const extra = arr(rep.other_must_have_issues);
@@ -620,7 +633,7 @@ function h(tag, attrs, ...kids) {
 }
 const VERDICT = { APPLY: "投！APPLY", MAYBE: "可以考虑 MAYBE", SKIP: "不投 SKIP" };
 const PILL = { pass: "PASS", fail: "FAIL", warn: "CHECK", unclear: "UNKNOWN" };
-const CAT = { core_ds: "DS 核心", learnable_domain: "可速成领域", sde_out_of_scope: "SDE 超纲", other: "其他" };
+const CAT = { core_ds: "DS 核心", learnable_domain: "行业知识·不扣分", sde_out_of_scope: "SDE 超纲", other: "其他" };
 
 function renderResult(v, opts = {}) {
   const box = opts.box || $("results"); box.replaceChildren();

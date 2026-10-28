@@ -192,7 +192,7 @@ def render_result(v, jd_text: str, show_head: bool = True):
     rep = v.report
     if rep is not None:
         st.markdown("**技能拆解**")
-        cat = {"core_ds": "DS 核心", "learnable_domain": "可速成 domain",
+        cat = {"core_ds": "DS 核心", "learnable_domain": "行业知识（不扣分）",
                "sde_out_of_scope": "SDE 超纲", "other": "其他"}
         st.dataframe(
             [{"技能": k.skill, "类别": cat[k.category], "必需": "✔" if k.required else "",

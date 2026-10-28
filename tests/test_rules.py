@@ -76,6 +76,23 @@ def test_ds_role_applies():
     assert v.decision == APPLY, v
 
 
+def test_industry_does_not_matter_tech_stack_does():
+    # "Supply Chain" title and logistics domain, but the daily tools are Python / SQL / dashboards.
+    jd = ("Supply Chain Analyst Intern. Analyze logistics, inventory and transportation data to improve "
+          "operations. Write SQL queries and Python scripts, and build Tableau dashboards for the supply chain team.")
+    resume = "Data analytics projects with Python, pandas, SQL and Tableau dashboards."
+    s4, score = rules.check_skills_keywords(jd, resume)
+    assert s4.status == PASS and score >= 80
+    assert any("Supply chain" in e and "not scored" in e for e in s4.evidence)
+
+
+def test_ds_title_with_sde_stack_skipped():
+    jd = ("Data Scientist. You will build backend microservices in Java and Go, deploy them on Kubernetes, "
+          "and own system design for our distributed systems. Some Python.")
+    s4, _ = rules.check_skills_keywords(jd, "Python, SQL, statistics, machine learning.")
+    assert s4.status == FAIL
+
+
 def test_citizenship_short_circuits():
     jd = "Data Scientist. Python, SQL. Must be a U.S. citizen. H-1B sponsorship is available."
     v = screen(jd, {**DEFAULT_PROFILE, "resume": RESUME}, api_key="should-not-be-used")

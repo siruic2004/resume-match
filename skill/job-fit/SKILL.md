@@ -33,14 +33,18 @@ Any recent filings → the company can sponsor → treat step 2 as passed. A JD 
 **Step 3 — Graduation.** Compare Dec 2027 against any graduation window, class year, "must have
 graduated by", or "returning to school" requirement. Out of window → SKIP.
 
-**Step 4 — Skills.** Read the requirements, not the title. Classify each skill:
-- DS core (Python, SQL, stats, ML, experimentation, BI, cloud data tools) — check against resume.
-- Learnable domain in 1–2 weeks (finance, marketing, risk, credit, fraud, probability, insurance,
-  pricing…) — not a blocker.
+**Step 4 — Technical bar (not industry, not title).** Titles mislead both ways: a "Supply Chain
+Analyst" doing Python + SQL + dashboards is a DS-type job; a "Data Scientist" building Java backend
+services is an SDE job. List the tools the job uses day to day, then compare their kind and depth with
+the resume: matches / stretch (deeper or 1–2 quickly learnable tools) / above (research-level or heavy
+engineering → SKIP). Classify each skill:
+- DS core (Python, SQL, Excel, stats, ML, experimentation, BI/dashboards, ETL, cloud data tools) — check against resume.
+- Industry knowledge of any kind (finance, marketing, risk, supply chain, logistics, healthcare…) —
+  interns are expected to learn it on the job; it never lowers the score.
 - SDE out of scope (C++, Java/Go backend, distributed systems, system design, frontend/mobile,
   embedded, production software development as the core job) — a **required** one the user lacks → SKIP.
 
-Give a fit score 0–100 (default apply threshold 65; MAYBE within 15 below).
+Give a fit score 0–100 from tech-stack overlap and depth only (default apply threshold 65; MAYBE within 15 below).
 
 ## Output
 ```
@@ -49,6 +53,6 @@ Company — Title
 1. Citizenship: ✅/❌ + quote
 2. Visa: ✅/⚠️/❌/❔ + quote
 3. Graduation: ✅/❌/❔ + reasoning
-4. Skills: table (skill | category | required | have | note)
+4. Technical bar: matches/stretch/above + tech stack + table (skill | category | required | have | note)
 总结 (2–3 sentences in Chinese) + 3–5 truthful resume tweaks
 ```

@@ -153,10 +153,19 @@ def _screen(jd: str, profile: dict, *, api_key: str = "", model: str = "", compa
         grad_status = FAIL
     steps[2] = StepResult(s3.step, grad_status, rep.graduation_reasoning, s3.evidence)
 
+    # Step 4 is about the technical bar; industry knowledge never counts against the job.
     blockers = rep.sde_blockers
-    s4_status = FAIL if blockers else (PASS if rep.fit_score >= profile["apply_threshold"] else WARN)
-    s4_summary = (f"超纲 SDE 技能: {', '.join(blockers)}" if blockers else f"Fit score {rep.fit_score}/100")
-    steps.append(StepResult("4. Skills & experience (Claude)", s4_status, s4_summary, rep.other_must_have_issues))
+    bar = {"matches": "技术门槛一致", "stretch": "技术门槛略高", "above": "技术门槛超出"}[rep.technical_bar]
+    if blockers:
+        s4_status, s4_summary = FAIL, f"超纲 SDE 技能: {', '.join(blockers)}"
+    elif rep.technical_bar == "above":
+        s4_status, s4_summary = FAIL, f"{bar}：{rep.technical_bar_reason}"
+    else:
+        ok = rep.fit_score >= profile["apply_threshold"] and rep.technical_bar == "matches"
+        s4_status, s4_summary = PASS if ok else WARN, f"{bar}，Fit score {rep.fit_score}/100"
+    stack = [f"技术栈：{', '.join(rep.tech_stack)}"] if rep.tech_stack else []
+    steps.append(StepResult("4. Skills & experience (Claude)", s4_status, s4_summary,
+                            stack + [rep.technical_bar_reason] + rep.other_must_have_issues))
 
     v = _decide(steps, rep.fit_score, profile)
     v.report, v.title, v.company, v.sponsor = rep, rep.job_title, rep.company, info
@@ -166,7 +175,7 @@ def _screen(jd: str, profile: dict, *, api_key: str = "", model: str = "", compa
 
 
 def _decide(steps: list[StepResult], score: int, profile: dict) -> Verdict:
-    labels = {1: "需要公民身份", 2: "不提供签证支持 / 不接受 OPT·CPT", 3: "毕业时间不符", 4: "技能超纲或匹配度过低"}
+    labels = {1: "需要公民身份", 2: "不提供签证支持 / 不接受 OPT·CPT", 3: "毕业时间不符", 4: "技术门槛不符"}
     for i, s in enumerate(steps, 1):
         if s.status == FAIL:
             return _skip(steps, f"Step {i}: {labels[i]} — {s.summary}", score=score)

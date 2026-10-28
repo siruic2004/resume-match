@@ -257,13 +257,15 @@ DS_SKILLS = {
     "Looker": r"\blooker\b", "Excel": r"\bexcel\b", "Spark": r"\bspark\b|\bpyspark\b", "Airflow": r"\bairflow\b",
     "dbt": r"\bdbt\b", "Snowflake": r"\bsnowflake\b", "BigQuery": r"\bbigquery\b", "Databricks": r"\bdatabricks\b",
     "AWS": r"\baws\b", "GCP": r"\bgcp\b|\bgoogle\s+cloud\b", "Azure": r"\bazure\b", "ETL": r"\betl\b|\belt\b",
-    "Data visualization": r"\bdata\s+visuali[sz]ation\b", "SAS": r"\bsas\b", "MATLAB": r"\bmatlab\b", "Git": r"\bgit\b",
+    "Data visualization": r"\bdata\s+visuali[sz]ation\b", "Dashboards": r"\bdashboards?\b",
+    "Operations research": r"\boperations\s+research\b|\blinear\s+programming\b|\bmixed[\s-]integer\b", "SAS": r"\bsas\b", "MATLAB": r"\bmatlab\b", "Git": r"\bgit\b",
 }
 LEARNABLE_DOMAINS = {
     "Finance": r"\bfinanc", "Accounting": r"\baccounting\b", "Marketing": r"\bmarketing\b",
     "Risk": r"\brisk\b", "Credit": r"\bcredit\b", "Fraud": r"\bfraud\b", "Probability": r"\bprobabilit",
     "Stochastic": r"\bstochastic\b", "Actuarial / insurance": r"\bactuar|\binsurance\b",
-    "Pricing": r"\bpricing\b", "Supply chain": r"\bsupply\s+chain\b", "Healthcare": r"\bhealthcare\b|\bclinical\b",
+    "Pricing": r"\bpricing\b", "Supply chain": r"\bsupply\s+chain\b",
+    "Logistics": r"\blogistic(?:s|al)\b", "Operations": r"\boperations\b(?!\s+research)", "Ads": r"\badvertis", "Healthcare": r"\bhealthcare\b|\bclinical\b",
     "Econometrics": r"\beconometric", "Product analytics": r"\bproduct\s+analytics\b", "CRM": r"\bcrm\b",
 }
 
@@ -279,6 +281,9 @@ def _hits(table: dict[str, str], text: str) -> list[str]:
 
 
 def check_skills_keywords(jd: str, resume: str, sde_block_threshold: int = 3) -> tuple[StepResult, int]:
+    """Score the job's tool stack against the resume. Industry words (supply chain, finance, ...)
+    are reported but never scored: an intern can pick those up; the technical bar is what counts.
+    The title isn't used at all."""
     step = "4. Skills (keyword fallback)"
     jd_ds = _hits(DS_SKILLS, jd)
     have = set(_hits(DS_SKILLS, resume))
@@ -290,16 +295,18 @@ def check_skills_keywords(jd: str, resume: str, sde_block_threshold: int = 3) ->
     matched = [s for s in jd_ds if s in have]
     missing = [s for s in jd_ds if s not in have]
     score = round(100 * len(matched) / len(jd_ds)) if jd_ds else 50
-    score = max(0, score - 12 * len(sde_missing))
+    score = max(0, score - 10 * len(sde_missing))
 
     evidence = [
-        f"Matched DS skills: {', '.join(matched) or '—'}",
-        f"Missing DS skills: {', '.join(missing) or '—'}",
+        f"Job's data tool stack: {', '.join(jd_ds) or '—'}",
+        f"Matched: {', '.join(matched) or '—'}",
+        f"Missing: {', '.join(missing) or '—'}",
         f"SDE skills in JD you lack: {', '.join(sde_missing) or '—'}",
-        f"Learnable domain topics (1–2 weeks): {', '.join(domains) or '—'}",
+        f"Industry knowledge (not scored, learnable on the job): {', '.join(domains) or '—'}",
     ]
-    if len(sde_missing) >= sde_block_threshold:
-        return StepResult(step, FAIL, f"Looks like an SDE role ({len(sde_missing)} SWE skills you don't have).",
-                          evidence), score
+    # An SDE job: several SWE skills you lack, and they outnumber the data tools in the JD.
+    if len(sde_missing) >= sde_block_threshold and len(jd_sde) >= len(jd_ds):
+        return StepResult(step, FAIL, f"Tech stack is mostly software engineering ({len(sde_missing)} SWE skills "
+                                      f"you don't have vs. {len(jd_ds)} data tools).", evidence), score
     status = PASS if score >= 60 else WARN if score >= 40 else FAIL
-    return StepResult(step, status, f"Keyword match score {score}/100.", evidence), score
+    return StepResult(step, status, f"Tech-stack match {score}/100.", evidence), score
