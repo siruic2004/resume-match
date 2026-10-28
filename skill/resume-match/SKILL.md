@@ -1,5 +1,5 @@
 ---
-name: job-fit
+name: resume-match
 description: Screen a job posting (URL or pasted JD) against the user's resume for an F-1 Data Science job seeker — rejects citizenship/clearance roles first, then checks OPT/CPT/H-1B, graduation date, and DS skill fit, and returns APPLY / MAYBE / SKIP. Use when the user pastes a job link or JD and asks whether to apply.
 ---
 
@@ -12,7 +12,7 @@ or a resume file in the project; read it first. If there is none, ask them to up
 
 ## Getting the JD
 1. Fetch the URL. For JS-heavy ATS pages, try the project's fetcher instead:
-   `python -I -c "from jobfit.fetcher import fetch_job; print(fetch_job('<URL>').text)"` (run from the repo root).
+   `python -I -c "from resume_match.fetcher import fetch_job; print(fetch_job('<URL>').text)"` (run from the repo root).
 2. If both fail (login wall, empty page), stop and ask the user to paste the JD text. Don't guess.
 
 ## Steps — run in order, stop at the first hard failure
@@ -25,7 +25,7 @@ line, and do not evaluate anything else. Ignore EEO boilerplate ("without regard
 (usually fine for CPT/OPT, flag H-1B as unknown) / explicitly no sponsorship now or in future
 (→ SKIP unless the user's profile has `reject_no_sponsorship: false`).
 When the JD is silent, check the company's H-1B filing history: run
-`python -I -c "from jobfit.sponsor import check_sponsor; print(check_sponsor('<Company>').describe())"`
+`python -I -c "from resume_match.sponsor import check_sponsor; print(check_sponsor('<Company>').describe())"`
 from the repo root (h1bdata.info + a list of large sponsors), or search MyVisaJobs / H1BGrader.
 Any recent filings → the company can sponsor → treat step 2 as passed. A JD that explicitly says
 "no sponsorship" still wins over history.

@@ -1,7 +1,7 @@
-from jobfit import rules
-from jobfit.pipeline import APPLY, SKIP, screen
-from jobfit.profile import DEFAULT_PROFILE
-from jobfit.rules import FAIL, PASS, UNCLEAR, WARN
+from resume_match import rules
+from resume_match.pipeline import APPLY, SKIP, screen
+from resume_match.profile import DEFAULT_PROFILE
+from resume_match.rules import FAIL, PASS, UNCLEAR, WARN
 
 
 def status(r):
@@ -101,7 +101,7 @@ def test_citizenship_short_circuits():
 
 # ---------------- per-user config export / import
 def test_profile_roundtrip_drops_unknown_keys():
-    from jobfit.profile import profile_from_json, profile_to_json
+    from resume_match.profile import profile_from_json, profile_to_json
     p = {**DEFAULT_PROFILE, "resume": "Python SQL", "grad_month": 3, "evil": "x"}
     back = profile_from_json(profile_to_json(p))
     assert back["resume"] == "Python SQL" and back["grad_month"] == 3 and "evil" not in back
@@ -115,7 +115,7 @@ def test_difficulty_heuristic():
 
 
 def test_rank_jobs_caps_and_skips():
-    from jobfit.pipeline import MAYBE, Verdict, rank_jobs
+    from resume_match.pipeline import MAYBE, Verdict, rank_jobs
     a = Verdict(APPLY, 85, "", difficulty=30, title="A")   # 73
     b = Verdict(APPLY, 90, "", difficulty=80, title="B")   # 58
     c = Verdict(MAYBE, 60, "", difficulty=10, title="C")   # 56
@@ -127,9 +127,9 @@ def test_rank_jobs_caps_and_skips():
 
 # ---------------- H-1B filing history
 def test_sponsor_history_rules():
-    from jobfit.pipeline import apply_sponsor_history
-    from jobfit.rules import StepResult
-    from jobfit.sponsor import SponsorInfo, check_sponsor, guess_company
+    from resume_match.pipeline import apply_sponsor_history
+    from resume_match.rules import StepResult
+    from resume_match.sponsor import SponsorInfo, check_sponsor, guess_company
     silent = StepResult("2", UNCLEAR, "none")
     filed = SponsorInfo("Chime", filings=71, ds_filings=26, year=2026, employers=["CHIME FINANCIAL INC"])
     none = SponsorInfo("Tiny Co", filings=0)
@@ -143,3 +143,32 @@ def test_sponsor_history_rules():
     assert check_sponsor("JPMorgan Chase & Co.", online=False).known_big
     assert not check_sponsor("Tiny Startup Inc", online=False).has_history
     assert guess_company("Role summary.\nAt Ramp, we build finance tools.") == "Ramp"
+
+
+def test_web_page_has_current_rules():
+    # web/index.html carries an inlined copy of rules.json; run scripts/build_web.py after editing it.
+    import json
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    page = (root / "web" / "index.html").read_text(encoding="utf-8")
+    block = re.search(r'<script type="application/json" id="rules-data">(.*?)</script>', page, re.S).group(1)
+    assert json.loads(block.replace("<\\/", "</")) == rules.RULES
+
+
+def test_rules_json_patterns_compile_without_python_only_syntax():
+    import re
+
+    def walk(x):
+        if isinstance(x, dict):
+            for v in x.values():
+                yield from walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                yield from walk(v)
+        elif isinstance(x, str):
+            yield x
+    for p in walk(rules.RULES):
+        assert "(?P<" not in p and "(?i" not in p and "\\Z" not in p, p
+    for p in rules.CITIZENSHIP_PATTERNS + rules.NO_SPONSOR_PATTERNS:
+        re.compile(p)

@@ -6,7 +6,17 @@ from typing import Literal
 import anthropic
 from pydantic import BaseModel, Field
 
-DEFAULT_MODEL = "claude-opus-5-5"
+# Screening a JD is a high-volume classification task, so the cheapest model is the default.
+# Per million tokens (input, output), USD. Run evals/run.py to compare accuracy before switching.
+PRICES = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-opus-5-5": (4.00, 20.00),
+}
+DEFAULT_MODEL = "claude-haiku-5-5"
+DEFAULT_EFFORT = "low"
+# The report is ~1–2K tokens of JSON; the rest is headroom for thinking.
+MAX_TOKENS = 6000
 
 SYSTEM_PROMPT = """You screen job postings for an international F-1 student who wants Data Science / \
 Data Analyst / ML / quantitative-analytics roles. Be strict and evidence-based: quote the JD.
@@ -81,8 +91,18 @@ class FitReport(BaseModel):
     resume_tips: list[str]
 
 
-def assess(jd: str, resume: str, *, grad_label: str, visa_status: str, extra_requirements: str,
-           api_key: str, model: str = DEFAULT_MODEL) -> FitReport:
+def cost_usd(model: str, usage) -> float:
+    price_in, price_out = PRICES.get(model, PRICES["claude-opus-5-5"])
+    return (usage.input_tokens * price_in + usage.output_tokens * price_out) / 1_000_000
+
+
+def assess(jd: str, resume: str, **kwargs) -> FitReport:
+    return assess_with_usage(jd, resume, **kwargs)[0]
+
+
+def assess_with_usage(jd: str, resume: str, *, grad_label: str, visa_status: str, extra_requirements: str,
+                      api_key: str = "", model: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT):
+    """Returns (FitReport, response.usage)."""
     client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
     user = f"""<candidate>
 Visa status: {visa_status}
@@ -100,9 +120,9 @@ Extra must-have conditions from the candidate: {extra_requirements or "none"}
 
     response = client.messages.parse(
         model=model,
-        max_tokens=16000,
+        max_tokens=MAX_TOKENS,
         system=SYSTEM_PROMPT,
-        output_config={"effort": "medium"},
+        output_config={"effort": effort},
         messages=[{"role": "user", "content": user}],
         output_format=FitReport,
     )
@@ -110,4 +130,4 @@ Extra must-have conditions from the candidate: {extra_requirements or "none"}
         raise RuntimeError("Claude declined this request.")
     if response.parsed_output is None:
         raise RuntimeError(f"No structured output (stop_reason={response.stop_reason}).")
-    return response.parsed_output
+    return response.parsed_output, response.usage

@@ -1,7 +1,7 @@
-"""JobFit — paste a JD URL, get an apply / skip verdict against your resume.
+"""Resume Match — paste a JD URL, get an apply / skip verdict against your resume.
 
 Run:  streamlit run app.py                  (shared mode: per-visitor data, bring-your-own key)
-      JOBFIT_LOCAL=1 streamlit run app.py   (local mode: saves to data/, reads ANTHROPIC_API_KEY)
+      RESUME_MATCH_LOCAL=1 streamlit run app.py   (local mode: saves to data/, reads ANTHROPIC_API_KEY)
 """
 import calendar
 import hashlib
@@ -10,15 +10,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 import streamlit as st
 
-from jobfit.fetcher import FetchError, fetch_job
-from jobfit.pipeline import APPLY, DIFFICULTY_WEIGHT, MAYBE, SKIP, priority, rank_jobs, screen
-from jobfit.profile import (DEFAULT_PROFILE, append_history, extract_resume_text, history_row,
+from resume_match.fetcher import FetchError, fetch_job
+from resume_match.pipeline import APPLY, DIFFICULTY_WEIGHT, MAYBE, SKIP, priority, rank_jobs, screen
+from resume_match.profile import (DEFAULT_PROFILE, append_history, extract_resume_text, history_row,
                             history_to_csv, is_local_mode, load_history, load_profile,
                             profile_from_json, profile_to_json, save_profile)
-from jobfit.rules import FAIL, PASS, UNCLEAR, WARN
-from jobfit.sponsor import check_sponsor
+from resume_match.rules import FAIL, PASS, UNCLEAR, WARN
+from resume_match.sponsor import check_sponsor
 
-st.set_page_config(page_title="JobFit", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="Resume Match", page_icon="🎯", layout="wide")
 
 st.markdown("""
 <style>
@@ -100,8 +100,9 @@ with st.sidebar:
             help="只保存在你这次打开的页面里，不会写入服务器。不填则退回关键词匹配。")
         st.caption("用你自己的 key，费用记在你自己的账户。"
                    "[获取 key](https://console.anthropic.com/settings/keys)")
-    model = st.selectbox("Model", ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
-                         help="Opus 最准 (~$0.05–0.10/次)；Haiku 最便宜 (~$0.002/次)")
+    model = st.selectbox("Model", ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
+                         help="按每个 JD 约 4K 输入 + 2K 输出估算：Haiku ≈ $0.0015/次，Sonnet ≈ $0.03，Opus ≈ $0.06。"
+                              "筛 JD 是分类任务，默认 Haiku；evals/ 里可以比较三者的准确率。")
     if not LOCAL:
         st.info("🔒 你的简历和设置只存在当前浏览器页面里，其他人看不到；"
                 "刷新或关闭页面后会清空 —— 用「导出配置」保存一份到电脑。")
@@ -144,8 +145,8 @@ with side:
 
     with tab_cfg:
         st.markdown("把简历 + 设置存成一个文件，下次打开网页时导入即可。")
-        st.download_button("⬇️ 导出配置 (jobfit-profile.json)", profile_to_json(profile),
-                           file_name="jobfit-profile.json", mime="application/json",
+        st.download_button("⬇️ 导出配置 (resume-match-profile.json)", profile_to_json(profile),
+                           file_name="resume-match-profile.json", mime="application/json",
                            width="stretch")
         st.file_uploader("⬆️ 导入配置", type=["json"], key="config_file", on_change=on_config_import)
         if ss.get("import_msg"):
@@ -268,8 +269,11 @@ with main:
         st.markdown("同一家公司有多个岗位、但只允许投 1–3 个时用：每行粘一个链接，按**适配度**和**难度**排序，选出最值得投的。")
         urls_raw = st.text_area("JD 链接（每行一个）", key="multi_urls", height=140,
                                 placeholder="https://job-boards.greenhouse.io/acme/jobs/123\nhttps://job-boards.greenhouse.io/acme/jobs/456")
-        c1, c2, c3 = st.columns([1.2, 1.2, 2])
+        c1, c1b, c2, c3 = st.columns([1, 1, 1.2, 2])
         max_apply = c1.number_input("最多可投几个", 1, 10, 2, key="multi_max")
+        weight = c1b.number_input("难度权重", 0.0, 2.0, DIFFICULTY_WEIGHT, 0.1, key="multi_weight",
+                                  help="优先级 = 适配度 − 权重 × 难度。0.4 表示难 25 分的岗位要多 10 分适配度才能排在一起；"
+                                       "调成 0 就只看适配度。")
         multi_company = c3.text_input("公司名（可选，用于查 H-1B 记录）", key="multi_company",
                                       placeholder="留空则从页面自动识别")
         go_multi = c2.button("🎯 对比这些岗位", type="primary", width="stretch")
@@ -338,7 +342,7 @@ with main:
 
         if ss.multi:
             by_v = {id(v): (u, jd) for u, v, jd in ss.multi}
-            ranked = rank_jobs([v for _, v, _ in ss.multi], int(max_apply))
+            ranked = rank_jobs([v for _, v, _ in ss.multi], int(max_apply), weight)
             picks = [v for v, rec in ranked if rec]
             if picks:
                 names = "、".join(v.title or by_v[id(v)][0] for v in picks)
@@ -349,11 +353,11 @@ with main:
                 "排名": i, "推荐": "⭐" if rec else "", "职位": v.title or "—", "结论": v.decision,
                 "适配度": v.score,
                 "难度": v.difficulty,
-                "优先级": round(priority(v)) if v.decision != SKIP else None,
+                "优先级": round(priority(v, weight)) if v.decision != SKIP else None,
                 "原因": v.reason, "链接": by_v[id(v)][0],
             } for i, (v, rec) in enumerate(ranked, 1)], width="stretch", hide_index=True,
                 column_config={"链接": st.column_config.LinkColumn("链接", display_text="打开")})
-            st.caption(f"优先级 = 适配度 − {DIFFICULTY_WEIGHT} × 难度。没通过硬性筛选的岗位排在最后，不会被推荐。")
+            st.caption(f"优先级 = 适配度 − {weight:g} × 难度。没通过硬性筛选的岗位排在最后，不会被推荐。")
             for i, (v, rec) in enumerate(ranked, 1):
                 u, jd = by_v[id(v)]
                 with st.expander(f"{'⭐ ' if rec else ''}#{i} {LABEL[v.decision]} · {v.title or u}"):
@@ -365,4 +369,4 @@ with main:
         with st.expander(f"🗂 历史记录 ({len(ss.history)})"):
             st.dataframe(ss.history, width="stretch", hide_index=True)
             st.download_button("⬇️ 下载历史 CSV", history_to_csv(ss.history),
-                               file_name="jobfit-history.csv", mime="text/csv")
+                               file_name="resume-match-history.csv", mime="text/csv")

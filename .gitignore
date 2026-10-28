@@ -6,3 +6,7 @@ __pycache__/
 .venv/
 .DS_Store
 .pytest_cache/
+# eval data: full JD texts are the companies' content, kept local; Claude outputs are cached runs
+evals/jds.jsonl
+evals/runs/
+evals/.py_*.json

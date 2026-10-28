@@ -2,7 +2,7 @@
 
 Shared deployments keep everything in the viewer's own browser session (nothing
 is written to the server). Disk persistence under data/ is only used in local
-mode (JOBFIT_LOCAL=1), where the app has a single user.
+mode (RESUME_MATCH_LOCAL=1), where the app has a single user.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ HISTORY_FIELDS = ["time", "verdict", "score", "company", "title", "url", "reason
 
 
 def is_local_mode() -> bool:
-    return os.environ.get("JOBFIT_LOCAL", "").lower() in ("1", "true", "yes")
+    return os.environ.get("RESUME_MATCH_LOCAL", "").lower() in ("1", "true", "yes")
 
 
 # ---------------------------------------------------------------- profile

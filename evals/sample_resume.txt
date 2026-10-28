@@ -1,0 +1,5 @@
+SAMPLE RESUME (placeholder used by evals/run.py; pass --resume to use your own)
+M.S. Data Science, expected December 2027. F-1 student.
+Skills: Python (pandas, NumPy, scikit-learn), SQL, R, statistics, A/B testing, regression, Tableau, Excel, Git, AWS basics.
+Projects: churn prediction with gradient boosting; SQL + Tableau sales dashboard; A/B test analysis of a pricing change.
+Internship: Data Analyst Intern — built weekly KPI dashboards in Tableau, wrote SQL for reporting, ran cohort analyses in Python.

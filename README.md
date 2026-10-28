@@ -1,4 +1,4 @@
-# 🎯 JobFit — 这个岗位投不投？
+# Resume Match — 这个岗位投不投？
 
 粘贴 JD，对照你的简历给出 **APPLY / MAYBE / SKIP**。为找 Data Science 岗位的 F-1 国际学生设计。
 
@@ -21,7 +21,7 @@
 ```bash
 pip install -r requirements.txt
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # 填入 ANTHROPIC_API_KEY
-JOBFIT_LOCAL=1 streamlit run app.py
+RESUME_MATCH_LOCAL=1 streamlit run app.py
 ```
 
 ## 筛选规则（按顺序，前一步不过就停）
@@ -59,6 +59,32 @@ JD 没写签证政策时，公司办过 H-1B 就说明它能 sponsor：
 - 每个岗位都按上面 4 步筛选，另外给出**难度**（0–100，参考经验年限、学历、职级、团队竞争程度）。
 - 按 **优先级 = 适配度 − 0.4 × 难度** 排序，标出最该投的前 N 个；没通过硬性筛选的岗位排在最后，不推荐。
 
+## 准确率（evals/）
+
+我从公开招聘页抓了 96 个真实 JD，按第 1–3 步逐条人工标注，再对比规则的判断。详见 [evals/README.md](evals/README.md)。
+
+| | 公民身份 | 签证 | 毕业时间 |
+|---|---|---|---|
+| 修复前（66 个 dev） | 91%，漏判一半 | 88% | 92% |
+| **修复后，30 个留出测试集** | 97%（不漏判） | 100% | 100% |
+
+- **第一次评测**：发现 "Must be a U.S. Person" 识别不出来，要求公民身份的岗位有一半被放过去了。
+- **Claude 这一侧**：用 `python evals/run.py --model claude-haiku-5-5` 测，需要 API key，每个 JD 约 $0.001。
+- **fit_score / difficulty**：用 `--repeat 2` 测同一 JD 两次打分差多少，看它是否稳定到能拿来卡阈值。
+- **局限**：测试集小，签证和毕业时间的样本少。
+
+## 模型和费用
+
+筛 JD 是高频、低难度的分类任务，默认用 **Haiku 5.5**（effort low，max_tokens 6000）。按每个 JD 约 4K 输入 + 2K 输出估算：
+
+| 模型 | 每个 JD |
+|---|---|
+| Haiku 5.5（默认） | ≈ $0.0015 |
+| Sonnet 5.5 | ≈ $0.03 |
+| Opus 5.5 | ≈ $0.06 |
+
+侧边栏可以切换。换模型之前，先用 evals 比一下准确率。
+
 ## 两个版本对比
 
 | | 网页版 | Streamlit 版 |
@@ -70,10 +96,17 @@ JD 没写签证政策时，公司办过 H-1B 就说明它能 sponsor：
 
 ## 其他
 
-- **Claude Code 技能：** 把 `skill/job-fit/` 复制到 `~/.claude/skills/`，在 Claude Code 里发链接即可分析。
+- **Claude Code 技能：** 把 `skill/resume-match/` 复制到 `~/.claude/skills/`，在 Claude Code 里发链接即可分析。
 - **代码结构：**
   - `app.py`：Streamlit 界面
-  - `jobfit/`：抓取 JD、筛选规则、Claude 评分
-  - `web/jobfit.html`：网页版
+  - `resume_match/`：抓取 JD、筛选规则、Claude 评分
+  - `web/index.html`：网页版
   - `tests/`：规则测试（运行 `pytest`）
-- **调整规则：** 改 `jobfit/rules.py` 里的正则；网页版的同一套规则在 `web/jobfit.html`，两边要一起改。
+  - `evals/`：96 个真实 JD 的人工标注和评测脚本
+- **调整规则：**
+  - 所有正则和阈值都在 `resume_match/rules.json`，Python 和网页版都读它。
+  - 改完运行 `python scripts/build_web.py`，把规则同步进网页；忘了同步的话 `pytest` 会报错。
+  - 再跑一次 `python evals/run.py`，确认准确率没有下降。
+- **几个数字的由来**（都在 `rules.json` 里，带说明）：
+  - **优先级 = 适配度 − 0.4 × 难度**：难 25 分的岗位，要多 10 分适配度才能排在一起。适配度权重更高，因为匹配度高的岗位即使难，也值得一试。Streamlit 版可以调这个权重。
+  - **难度兜底分**：基础 35 分，每年经验要求 +8，PhD 要求 +20。只在没有 Claude 时使用，还没有校准过。

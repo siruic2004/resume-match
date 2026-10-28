@@ -49,19 +49,21 @@ def screen(jd: str, profile: dict, *, api_key: str = "", model: str = "", compan
     return v
 
 
-# Fit counts more than difficulty: a strong match at a hard team still beats a weak match at an easy one.
-DIFFICULTY_WEIGHT = 0.4
+# Default 0.4: a job 25 points harder needs 10 more fit points to rank level. See rules.json["ranking"].
+DIFFICULTY_WEIGHT: float = rules.RULES["ranking"]["difficulty_weight"]
+MAYBE_BAND: int = rules.RULES["decision"]["maybe_band"]
 
 
-def priority(v: Verdict) -> float:
-    return (v.score or 0) - DIFFICULTY_WEIGHT * (v.difficulty or 0)
+def priority(v: Verdict, weight: float = DIFFICULTY_WEIGHT) -> float:
+    return (v.score or 0) - weight * (v.difficulty or 0)
 
 
-def rank_jobs(verdicts: list[Verdict], max_apply: int) -> list[tuple[Verdict, bool]]:
+def rank_jobs(verdicts: list[Verdict], max_apply: int,
+              weight: float = DIFFICULTY_WEIGHT) -> list[tuple[Verdict, bool]]:
     """Order jobs for a company that caps applications. Hard SKIPs go last and are
     never recommended; the top `max_apply` of the rest are marked recommended."""
     order = {APPLY: 0, MAYBE: 1, SKIP: 2}
-    ranked = sorted(verdicts, key=lambda v: (v.decision == SKIP, -priority(v), order[v.decision]))
+    ranked = sorted(verdicts, key=lambda v: (v.decision == SKIP, -priority(v, weight), order[v.decision]))
     out, picked = [], 0
     for v in ranked:
         rec = v.decision != SKIP and picked < max_apply
@@ -182,6 +184,6 @@ def _decide(steps: list[StepResult], score: int, profile: dict) -> Verdict:
     t = profile["apply_threshold"]
     if score >= t and not any(s.status == WARN for s in steps):
         return Verdict(APPLY, score, "通过全部筛选，建议投递", steps)
-    if score >= t - 15:
+    if score >= t - MAYBE_BAND:
         return Verdict(MAYBE, score, "基本符合，但有需要人工确认的地方", steps)
     return Verdict(SKIP, score, f"匹配度 {score} 低于阈值 {t}", steps)
