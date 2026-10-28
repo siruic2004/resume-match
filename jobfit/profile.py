@@ -23,6 +23,7 @@ DEFAULT_PROFILE = {
     "grad_year": 2027,
     "grad_month": 12,  # "2027 Winter" = December 2027 by default; change in the UI if you mean Jan–Mar 2027
     "reject_no_sponsorship": True,
+    "check_h1b_history": True,  # look up the company on h1bdata.info when the JD is silent
     "use_llm": True,
     "apply_threshold": 65,
     "extra_requirements": "",

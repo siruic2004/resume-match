@@ -29,9 +29,20 @@ JOBFIT_LOCAL=1 streamlit run app.py
 | 步骤 | 检查 | 不通过 |
 |---|---|---|
 | 1 | 要求美国公民 / 绿卡 / 永久工作许可 / 安全许可 / ITAR | 直接放弃，后面不再检查 |
-| 2 | 是否接受 OPT / CPT；提供 H-1B 最好 | 写明不 sponsor → 放弃（可关闭） |
+| 2 | 是否接受 OPT / CPT；提供 H-1B 最好。JD 没提签证时，查公司有没有 H-1B 申请记录（见下） | 写明不 sponsor → 放弃（可关闭） |
 | 3 | 毕业时间（默认 2027 年 12 月）是否在要求范围内 | 放弃 |
 | 4 | 看 JD 里的技能要求而不是职位名称：DS 核心 / 可速成领域（金融、风控、营销、概率…）/ SDE 超纲（C++、后端开发…） | 必需的 SDE 技能缺失或匹配度低 → 放弃 |
+
+## 公司 H-1B 记录
+
+JD 没写签证政策时，公司办过 H-1B 就说明它能 sponsor：
+
+- **常年大量办 H-1B 的大公司**（Amazon、Google、JPMorgan、Deloitte 等）直接认定。
+- **Streamlit 版**会自动查 [h1bdata.info](https://h1bdata.info)（美国劳工部公开数据），显示近一年的申请条数，以及其中 Data/Analytics 相关的条数。
+- **网页版**不能访问外部网站，改由 Claude 根据自己的知识判断，标注"请核实"。
+- 两个版本都会给出 [MyVisaJobs](https://www.myvisajobs.com)、E-Verify（STEM OPT 需要）、[H1BGrader](https://h1bgrader.com) 的核实链接。这两个网站有反爬虫验证，没法自动查询。
+- JD 明确写了"不 sponsor"时以 JD 为准，公司历史记录不改变结论。
+- 公司名默认自动识别，识别不准时可以手动填写。
 
 ## 同公司多岗位对比
 

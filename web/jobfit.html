@@ -130,6 +130,9 @@ ul.tips { margin: 0; padding-left: 20px; display: flex; flex-direction: column; 
 .hist .item:last-child { border-bottom: 0; }
 .hist .item .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+input.plain { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 9px 12px; }
+.verify { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.verify a { color: var(--accent); }
 .modes { width: 100%; max-width: 360px; }
 .multi { width: 100%; max-width: 760px; display: flex; flex-direction: column; gap: 10px; }
 .jobblock { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
@@ -156,6 +159,7 @@ details.job > div { display: flex; flex-direction: column; gap: 12px; padding-bo
     </div>
     <div class="multi" id="multiMode" hidden>
       <p class="hint">同一家公司有多个岗位、但只允许投 1–3 个时用：每个框粘一个完整 JD，按适配度和难度排序，选出最值得投的。</p>
+      <input id="multiCompany" class="plain" type="text" placeholder="公司名（可选，用来查 H-1B 记录）" aria-label="公司名">
       <div id="jobBlocks" class="checks"></div>
       <div class="multibar">
         <button class="btn small ghost" id="addJob" type="button">+ 再加一个岗位</button>
@@ -173,6 +177,10 @@ details.job > div { display: flex; flex-direction: column; gap: 12px; padding-bo
       <details id="pasteBox">
         <summary>手动粘贴完整 JD</summary>
         <textarea id="jd" rows="10" placeholder="把整个 JD 复制进来（包括 Qualifications / Benefits / 签证说明部分）"></textarea>
+      </details>
+      <details id="companyBox">
+        <summary>公司名（可选，用来查 H-1B 记录；不填会自动识别）</summary>
+        <input id="company" class="plain" type="text" placeholder="例如 Robinhood" aria-label="公司名">
       </details>
     </div>
   </header>
@@ -205,6 +213,7 @@ details.job > div { display: flex; flex-direction: column; gap: 12px; padding-bo
         </div>
         <p class="small-note">"2027 Winter" 默认按 2027 年 12 月；如果指 2027 年初，改成 1–3 月。</p>
         <label class="switch"><span>JD 写明不 sponsor → 直接放弃</span><input id="rejectNoSp" type="checkbox"></label>
+        <label class="switch"><span>JD 没提签证时，看公司有没有 H-1B 记录</span><input id="checkH1b" type="checkbox"></label>
         <label class="switch"><span>用 Claude 深度分析技能（用你自己的 Claude 额度）</span><input id="useClaude" type="checkbox"></label>
         <label class="f">投递阈值 <span class="mono" id="thrVal"></span>
           <input id="thr" type="range" min="30" max="90" step="5">
@@ -233,7 +242,7 @@ details.job > div { display: flex; flex-direction: column; gap: 12px; padding-bo
 <script>
 /* ================= storage (this viewer's browser only) ================= */
 const DEFAULTS = { resume: "", visa_status: "F-1 (CPT now, OPT / STEM OPT after graduation)", grad_year: 2027, grad_month: 12,
-  reject_no_sponsorship: true, use_llm: true, apply_threshold: 65, extra_requirements: "" };
+  reject_no_sponsorship: true, check_h1b_history: true, use_llm: true, apply_threshold: 65, extra_requirements: "" };
 const store = {
   get(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -404,6 +413,59 @@ function estimateDifficulty(jd, title = "") {
   return [Math.max(0, Math.min(100, score)), why.join("；") || "无明显门槛信号"];
 }
 
+/* ================= company H-1B history ================= */
+// This page cannot reach other sites, so history comes from a list of large sponsors plus
+// Claude's own knowledge, with links to MyVisaJobs / H1BGrader / h1bdata to verify.
+const KNOWN_SPONSORS = new Set(["amazon","aws","google","alphabet","microsoft","meta","facebook","apple","netflix","nvidia","intel","ibm","oracle",
+  "salesforce","adobe","cisco","qualcomm","amd","linkedin","uber","lyft","airbnb","doordash","instacart","stripe","paypal","block","square","snowflake",
+  "databricks","servicenow","workday","intuit","vmware","broadcom","dell","hp","tiktok","bytedance","snap","pinterest","spotify","ebay","walmart",
+  "target","expedia","booking","wayfair","twilio","atlassian","palantir","tesla","samsung","visa","mastercard","jpmorgan","jpmorgan chase",
+  "goldman sachs","morgan stanley","citi","citigroup","citibank","bank of america","wells fargo","capital one","american express","blackrock",
+  "barclays","deutsche bank","ubs","hsbc","fidelity","vanguard","charles schwab","two sigma","citadel","jane street","de shaw","d e shaw",
+  "bloomberg","s p global","moodys","discover","deloitte","pwc","pricewaterhousecoopers","ey","ernst young","kpmg","accenture","mckinsey",
+  "boston consulting group","bcg","bain","cognizant","infosys","tata consultancy services","tcs","wipro","hcl","capgemini","zs associates",
+  "pfizer","johnson johnson","unitedhealth","cvs","optum","merck","abbvie","genentech","eli lilly","walgreens","humana","geico","progressive","state farm"]);
+const SUFFIXES = /\b(?:inc|incorporated|llc|l\.l\.c|corp|corporation|co|company|ltd|limited|plc|lp|llp|na|n\.a|group|holdings|the|usa|us|america|technologies|technology)\b/g;
+function normCompany(n) {
+  return n.toLowerCase().replace(/&/g, " ").replace(/'/g, "").replace(/[.,()\/\-]/g, " ").replace(SUFFIXES, " ").replace(/\s+/g, " ").trim();
+}
+const isKnownSponsor = (n) => { const k = normCompany(n); return !!k && [...KNOWN_SPONSORS].some(s => k === s || k.startsWith(s + " ")); };
+function sponsorLinks(company) {
+  const q = encodeURIComponent(company);
+  return { "MyVisaJobs": `https://www.myvisajobs.com/employers/search.aspx?e=${q}`,
+    "MyVisaJobs E-Verify (STEM OPT)": `https://www.myvisajobs.com/employers/e-verify.aspx?e=${q}`,
+    "H1BGrader": "https://h1bgrader.com/", "h1bdata": `https://h1bdata.info/index.php?em=${q}&job=&city=&year=all+years` };
+}
+const COMPANY_PATTERNS = [/\bAt ([A-Z][\w&.\-]*(?: [A-Z][\w&.\-]*){0,3}),? (?:we|our)\b/, /\bAbout ([A-Z][\w&.\-]*(?: [A-Z][\w&.\-]*){0,3})\s*\n/,
+  /\b([A-Z][\w&.\-]*(?: [A-Z][\w&.\-]*){0,3}) is an equal opportunity employer/];
+function guessCompany(jd) {
+  for (const re of COMPANY_PATTERNS) { const m = jd.match(re); if (m && !["the", "we", "our", "this"].includes(m[1].toLowerCase())) return m[1]; }
+  return "";
+}
+// info: {company, known, claude: "yes"|"no"|"unknown", reason, links}
+function sponsorInfo(company, rep) {
+  if (!company) return null;
+  return { company, known: isKnownSponsor(company), claude: rep ? String(rep.company_files_h1b || "unknown") : "unknown",
+    reason: rep ? String(rep.company_h1b_reason || "") : "", links: sponsorLinks(company) };
+}
+function describeSponsor(i) {
+  if (i.known) return `${i.company} 是常年大量办 H-1B 的大公司`;
+  if (i.claude === "yes") return `Claude 判断 ${i.company} 近年办过 H-1B（${i.reason || "依据其知识"}）— 请点下面的链接核实`;
+  if (i.claude === "no") return `Claude 认为 ${i.company} 很少或没有办过 H-1B（${i.reason || "依据其知识"}）— 请点链接核实`;
+  return `不确定 ${i.company} 有没有 H-1B 记录，请点下面的链接查`;
+}
+// The JD saying "no sponsorship" wins; history only upgrades a JD that says nothing.
+function applySponsorHistory(s2, label, info) {
+  if (!info) return s2;
+  const has = info.known || info.claude === "yes";
+  const ev = [describeSponsor(info), ...s2.evidence];
+  if (label === "no_sponsorship") return step(s2.step, s2.status, s2.summary + (has ? "（公司虽有 H-1B 记录，但这个岗位写明不 sponsor）" : ""), ev);
+  if (label === "none_mentioned") return has
+    ? step(s2.step, PASS, info.known ? "JD 没提签证，但公司常年办 H-1B → 可以 sponsor" : "JD 没提签证，Claude 判断公司办过 H-1B → 大概率可以 sponsor（请核实）", ev)
+    : step(s2.step, UNCLEAR, "JD 没提签证，公司 H-1B 记录未知，请点链接查", ev);
+  return step(s2.step, s2.status, s2.summary, ev);
+}
+
 /* ================= Claude (viewer's own account) ================= */
 let sample = null;
 (async () => { try { sample = await window.claude?.use?.("sample"); } catch { sample = null; } })();
@@ -443,6 +505,8 @@ Reply with only one JSON object with exactly these keys:
  "skills": [{"skill": str, "category": "core_ds"|"learnable_domain"|"sde_out_of_scope"|"other", "required": bool, "have": bool, "note": str (in Chinese)}],
  "sde_blockers": [str], "other_must_have_issues": [str (in Chinese)], "fit_score": int,
  "difficulty": int, "difficulty_reason": str (one short sentence in Chinese),
+ "company_files_h1b": "yes"|"no"|"unknown" (from your own knowledge: has this company filed H-1B petitions in recent years? "unknown" unless you are confident),
+ "company_h1b_reason": str (one short sentence in Chinese),
  "summary": str (2-3 sentences in Chinese: apply or not, and why), "resume_tips": [str (in Chinese)]}`;
 }
 
@@ -456,8 +520,8 @@ function decide(steps, score, p) {
   return { decision: "SKIP", score, reason: `匹配度 ${score} 低于阈值 ${t}`, steps };
 }
 
-async function screen(jd, p, ui, title = "") {
-  const v = await screenCore(jd, p, ui);
+async function screen(jd, p, ui, title = "", company = "") {
+  const v = await screenCore(jd, p, ui, company);
   const rep = v.report;
   if (rep && Number.isFinite(+rep.difficulty)) { v.difficulty = Math.max(0, Math.min(100, Math.round(+rep.difficulty))); v.difficulty_reason = String(rep.difficulty_reason || ""); }
   else [v.difficulty, v.difficulty_reason] = estimateDifficulty(jd, v.title || title);
@@ -474,17 +538,20 @@ function rankJobs(verdicts, maxApply) {
   return ranked.map(v => { const rec = v.decision !== "SKIP" && picked < maxApply; if (rec) picked++; return [v, rec]; });
 }
 
-async function screenCore(jd, p, ui) {
+async function screenCore(jd, p, ui, company = "") {
   const steps = [];
   const s1 = checkCitizenship(jd); steps.push(s1);
   if (s1.status === FAIL) return { decision: "SKIP", score: null, reason: "需要美国公民 / 绿卡 / 安全许可 — 直接放弃，后面不再检查", steps };
-  const [s2] = checkVisa(jd, p.reject_no_sponsorship);
+  const [s2, visaLabel] = checkVisa(jd, p.reject_no_sponsorship);
   const s3 = checkGraduation(jd, p.grad_year, p.grad_month);
   steps.push(s2, s3);
+  const lookup = (rep) => p.check_h1b_history ? sponsorInfo(company || (rep && rep.company) || guessCompany(jd), rep) : null;
+  let info = lookup(null);
+  steps[1] = applySponsorHistory(s2, visaLabel, info);
 
   if (!p.resume.trim()) {
-    for (let i = 0; i < steps.length; i++) if (steps[i].status === FAIL) return { decision: "SKIP", score: null, reason: `Step ${i + 1} 未通过 — ${steps[i].summary}`, steps };
-    return { decision: "MAYBE", score: null, reason: "前三步通过；在右侧填入简历后才能做技能匹配", steps };
+    for (let i = 0; i < steps.length; i++) if (steps[i].status === FAIL) return { decision: "SKIP", score: null, reason: `Step ${i + 1} 未通过 — ${steps[i].summary}`, steps, sponsor: info };
+    return { decision: "MAYBE", score: null, reason: "前三步通过；在右侧填入简历后才能做技能匹配", steps, sponsor: info };
   }
 
   let note = "";
@@ -492,7 +559,16 @@ async function screenCore(jd, p, ui) {
     ui.thinking();
     try {
       const rep = await sample.json(claudePrompt(jd, p), { signal: ui.signal, effort: "medium" });
-      return mergeClaude(rep, steps, s2, s3, p);
+      const v = mergeClaude(rep, steps, s2, s3, p);
+      if (v.steps.length > 1 && v.steps[0].status !== FAIL) {
+        info = lookup(rep);
+        const label = v.steps[1].status === FAIL ? "no_sponsorship" : String(rep.sponsorship || "none_mentioned");
+        v.steps[1] = applySponsorHistory(v.steps[1], label, info);
+        Object.assign(v, decide(v.steps, v.score ?? 0, p), { report: rep, title: rep.job_title, company: rep.company, sponsor: info });
+        const extra = Array.isArray(rep.other_must_have_issues) ? rep.other_must_have_issues.map(String) : [];
+        if (extra.length && v.decision === "APPLY") { v.decision = "MAYBE"; v.reason = "不满足你的额外必备条件：" + extra.join("；"); }
+      }
+      return v;
     } catch (e) {
       if (e && e.code === "cancelled") note = "已停止 Claude 分析，改用关键词匹配。";
       else if (e && (e.code === "not_granted" || e.code === "sampling_disabled")) note = "没有允许这个页面使用 Claude，已改用关键词匹配。";
@@ -505,7 +581,7 @@ async function screenCore(jd, p, ui) {
   const [s4, score] = checkSkillsKeywords(jd, p.resume);
   steps.push(s4);
   const v = decide(steps, score, p);
-  v.note = note;
+  v.note = note; v.sponsor = info;
   return v;
 }
 
@@ -566,6 +642,8 @@ function renderResult(v, opts = {}) {
     return d;
   })));
 
+  if (v.sponsor) box.append(h("div", { class: "verify" }, h("span", { text: `核实 ${v.sponsor.company} 的 H-1B 记录：` }),
+    Object.entries(v.sponsor.links).map(([name, href]) => h("a", { href, target: "_blank", rel: "noopener noreferrer", text: name }))));
   const rep = v.report;
   if (rep && Array.isArray(rep.skills) && rep.skills.length) {
     box.append(h("h3", { text: "技能拆解" }));
@@ -598,13 +676,13 @@ function renderHistory() {
 function fillForm() {
   $("resume").value = profile.resume; $("visa").value = profile.visa_status;
   $("gy").value = profile.grad_year; $("gm").value = profile.grad_month;
-  $("rejectNoSp").checked = profile.reject_no_sponsorship; $("useClaude").checked = profile.use_llm;
+  $("rejectNoSp").checked = profile.reject_no_sponsorship; $("useClaude").checked = profile.use_llm; $("checkH1b").checked = profile.check_h1b_history;
   $("thr").value = profile.apply_threshold; $("thrVal").textContent = profile.apply_threshold;
   $("extra").value = profile.extra_requirements; updateResumeCount();
 }
 function readForm() {
   profile = normalize({ resume: $("resume").value, visa_status: $("visa").value, grad_year: +$("gy").value, grad_month: +$("gm").value,
-    reject_no_sponsorship: $("rejectNoSp").checked, use_llm: $("useClaude").checked, apply_threshold: +$("thr").value, extra_requirements: $("extra").value });
+    reject_no_sponsorship: $("rejectNoSp").checked, check_h1b_history: $("checkH1b").checked, use_llm: $("useClaude").checked, apply_threshold: +$("thr").value, extra_requirements: $("extra").value });
   $("thrVal").textContent = profile.apply_threshold; updateResumeCount();
   store.set("jobfit.profile.v1", profile);
 }
@@ -614,8 +692,8 @@ function updateResumeCount() {
 }
 for (let y = 2024; y <= 2032; y++) $("gy").append(h("option", { value: y, text: y }));
 ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].forEach((m, i) => $("gm").append(h("option", { value: i + 1, text: m })));
-["resume", "visa", "gy", "gm", "rejectNoSp", "useClaude", "thr", "extra"].forEach(id => $(id).addEventListener("input", readForm));
-["gy", "gm", "rejectNoSp", "useClaude"].forEach(id => $(id).addEventListener("change", readForm));
+["resume", "visa", "gy", "gm", "rejectNoSp", "checkH1b", "useClaude", "thr", "extra"].forEach(id => $(id).addEventListener("input", readForm));
+["gy", "gm", "rejectNoSp", "checkH1b", "useClaude"].forEach(id => $(id).addEventListener("change", readForm));
 
 document.querySelectorAll(".side .tabs button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll(".side .tabs button").forEach(x => x.setAttribute("aria-selected", x === b ? "true" : "false"));
@@ -687,7 +765,7 @@ $("searchForm").addEventListener("submit", async (e) => {
     },
   };
   try {
-    const v = await screen(jd, profile, ui);
+    const v = await screen(jd, profile, ui, "", $("company").value.trim());
     renderResult(v);
     history.unshift({ time: new Date().toISOString().slice(0, 16).replace("T", " "), verdict: v.decision, score: v.score ?? "",
       company: v.company || "", title: v.title || "", url: isUrl(q) ? q : "", reason: v.reason });
@@ -737,7 +815,7 @@ $("compare").addEventListener("click", async () => {
     // one at a time: Claude allows only a couple of calls per viewer at once
     for (const [k, j] of jobs.entries()) {
       status.textContent = `正在分析第 ${k + 1} / ${jobs.length} 个岗位${j.name ? "：" + j.name : ""}…`;
-      const v = await screen(j.jd, profile, { signal: ctl.signal, thinking() {} }, j.name);
+      const v = await screen(j.jd, profile, { signal: ctl.signal, thinking() {} }, j.name, $("multiCompany").value.trim());
       if (!v.title) v.title = j.name || `岗位 #${j.i + 1}`;
       results.push(v);
       history.unshift({ time: new Date().toISOString().slice(0, 16).replace("T", " "), verdict: v.decision, score: v.score ?? "",

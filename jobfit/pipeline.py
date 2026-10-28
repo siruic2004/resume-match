@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 from . import rules
 from .rules import FAIL, PASS, UNCLEAR, WARN, StepResult
+from .sponsor import SponsorInfo, check_sponsor, guess_company
 
 APPLY, MAYBE, SKIP = "APPLY", "MAYBE", "SKIP"
 
@@ -25,6 +26,7 @@ class Verdict:
     company: str = ""
     difficulty: int | None = None  # 0 easy – 100 very hard to get an interview
     difficulty_reason: str = ""
+    sponsor: SponsorInfo | None = None  # company H-1B filing history
 
 
 def grad_label(profile: dict) -> str:
@@ -35,12 +37,15 @@ def _skip(steps, reason, **kw) -> Verdict:
     return Verdict(SKIP, kw.pop("score", None), reason, steps, **kw)
 
 
-def screen(jd: str, profile: dict, *, api_key: str = "", model: str = "") -> Verdict:
-    v = _screen(jd, profile, api_key=api_key, model=model)
+def screen(jd: str, profile: dict, *, api_key: str = "", model: str = "", company: str = "",
+           title: str = "") -> Verdict:
+    """`company` (from the job page, or typed by the user) is used to look up H-1B history;
+    without it the name comes from Claude's reading of the JD or a regex guess."""
+    v = _screen(jd, profile, api_key=api_key, model=model, company=company)
     if v.report is not None:
         v.difficulty, v.difficulty_reason = v.report.difficulty, v.report.difficulty_reason
     else:
-        v.difficulty, v.difficulty_reason = rules.estimate_difficulty(jd, v.title)
+        v.difficulty, v.difficulty_reason = rules.estimate_difficulty(jd, v.title or title)
     return v
 
 
@@ -65,7 +70,29 @@ def rank_jobs(verdicts: list[Verdict], max_apply: int) -> list[tuple[Verdict, bo
     return out
 
 
-def _screen(jd: str, profile: dict, *, api_key: str = "", model: str = "") -> Verdict:
+def sponsor_lookup(company: str, profile: dict) -> SponsorInfo | None:
+    if not profile.get("check_h1b_history", True) or not company.strip():
+        return None
+    return check_sponsor(company.strip())
+
+
+def apply_sponsor_history(s2: StepResult, label: str, info: SponsorInfo | None) -> StepResult:
+    """Fold the company's H-1B filing history into the visa step. A JD that says
+    "no sponsorship" still wins; history upgrades a JD that says nothing."""
+    if info is None:
+        return s2
+    evidence = [info.describe()] + s2.evidence
+    if label == "no_sponsorship":
+        note = "（公司虽有 H-1B 记录，但这个岗位写明不 sponsor）" if info.has_history else ""
+        return StepResult(s2.step, s2.status, s2.summary + note, evidence)
+    if label == "none_mentioned":
+        if info.has_history:
+            return StepResult(s2.step, PASS, "JD 没提签证，但公司有 H-1B 申请记录 → 可以 sponsor", evidence)
+        return StepResult(s2.step, UNCLEAR, "JD 没提签证，也没查到公司的 H-1B 记录，请点链接核实", evidence)
+    return StepResult(s2.step, s2.status, s2.summary, evidence)
+
+
+def _screen(jd: str, profile: dict, *, api_key: str = "", model: str = "", company: str = "") -> Verdict:
     steps: list[StepResult] = []
 
     # ---- 1. citizenship: hard stop, before anything else
@@ -82,16 +109,22 @@ def _screen(jd: str, profile: dict, *, api_key: str = "", model: str = "") -> Ve
     resume = profile.get("resume", "").strip()
     use_llm = profile.get("use_llm", True) and bool(api_key)
 
+    if not resume or not use_llm:
+        info = sponsor_lookup(company or guess_company(jd), profile)
+        steps[1] = apply_sponsor_history(s2, visa_label, info)
+
     if not resume:
         for i, s in enumerate(steps, 1):
             if s.status == FAIL:
-                return _skip(steps, f"Step {i} 未通过 — {s.summary}")
-        return Verdict(MAYBE, None, "前三步通过；上传简历后才能做技能匹配", steps)
+                return _skip(steps, f"Step {i} 未通过 — {s.summary}", sponsor=info)
+        return Verdict(MAYBE, None, "前三步通过；上传简历后才能做技能匹配", steps, sponsor=info)
 
     if not use_llm:
         s4, score = rules.check_skills_keywords(jd, resume or "")
         steps.append(s4)
-        return _decide(steps, score, profile)
+        v = _decide(steps, score, profile)
+        v.sponsor = info
+        return v
 
     # ---- Claude pass (steps 1–4 with judgement; rules above stay as a cross-check)
     from .llm import DEFAULT_MODEL, assess
@@ -112,6 +145,8 @@ def _screen(jd: str, profile: dict, *, api_key: str = "", model: str = "") -> Ve
         visa_status = FAIL
     steps[1] = StepResult(s2.step, visa_status, f"Claude: {rep.sponsorship}. {s2.summary}",
                           [rep.sponsorship_evidence] + s2.evidence)
+    info = sponsor_lookup(company or rep.company or guess_company(jd), profile)
+    steps[1] = apply_sponsor_history(steps[1], "no_sponsorship" if visa_status == FAIL else rep.sponsorship, info)
 
     grad_status = {"yes": PASS, "no": FAIL, "unclear": UNCLEAR}[rep.graduation_fit]
     if s3.status == FAIL and grad_status != PASS:
@@ -124,7 +159,7 @@ def _screen(jd: str, profile: dict, *, api_key: str = "", model: str = "") -> Ve
     steps.append(StepResult("4. Skills & experience (Claude)", s4_status, s4_summary, rep.other_must_have_issues))
 
     v = _decide(steps, rep.fit_score, profile)
-    v.report, v.title, v.company = rep, rep.job_title, rep.company
+    v.report, v.title, v.company, v.sponsor = rep, rep.job_title, rep.company, info
     if rep.other_must_have_issues and v.decision == APPLY:
         v.decision, v.reason = MAYBE, "不满足你的额外必备条件: " + "; ".join(rep.other_must_have_issues)
     return v

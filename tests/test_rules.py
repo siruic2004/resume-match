@@ -106,3 +106,23 @@ def test_rank_jobs_caps_and_skips():
     ranked = rank_jobs([d, c, b, a], max_apply=2)
     assert [v.title for v, _ in ranked] == ["A", "B", "C", "D"]
     assert [rec for _, rec in ranked] == [True, True, False, False]
+
+
+# ---------------- H-1B filing history
+def test_sponsor_history_rules():
+    from jobfit.pipeline import apply_sponsor_history
+    from jobfit.rules import StepResult
+    from jobfit.sponsor import SponsorInfo, check_sponsor, guess_company
+    silent = StepResult("2", UNCLEAR, "none")
+    filed = SponsorInfo("Chime", filings=71, ds_filings=26, year=2026, employers=["CHIME FINANCIAL INC"])
+    none = SponsorInfo("Tiny Co", filings=0)
+    assert apply_sponsor_history(silent, "none_mentioned", filed).status == PASS
+    assert apply_sponsor_history(silent, "none_mentioned", none).status == UNCLEAR
+    # the JD saying "no sponsorship" beats any history
+    no = StepResult("2", FAIL, "JD says no visa sponsorship.")
+    assert apply_sponsor_history(no, "no_sponsorship", filed).status == FAIL
+    # household names are recognised offline, legal suffixes and all
+    assert check_sponsor("Amazon.com Services LLC", online=False).known_big
+    assert check_sponsor("JPMorgan Chase & Co.", online=False).known_big
+    assert not check_sponsor("Tiny Startup Inc", online=False).has_history
+    assert guess_company("Role summary.\nAt Ramp, we build finance tools.") == "Ramp"

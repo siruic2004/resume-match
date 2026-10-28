@@ -16,6 +16,7 @@ from jobfit.profile import (DEFAULT_PROFILE, append_history, extract_resume_text
                             history_to_csv, is_local_mode, load_history, load_profile,
                             profile_from_json, profile_to_json, save_profile)
 from jobfit.rules import FAIL, PASS, UNCLEAR, WARN
+from jobfit.sponsor import check_sponsor
 
 st.set_page_config(page_title="JobFit", page_icon="🎯", layout="wide")
 
@@ -46,7 +47,7 @@ ss.setdefault("history", load_history() if LOCAL else [])
 WIDGET_KEYS = {"resume": "p_resume", "visa_status": "p_visa", "grad_year": "p_grad_year",
                "grad_month": "p_grad_month", "reject_no_sponsorship": "p_reject",
                "use_llm": "p_llm", "apply_threshold": "p_threshold",
-               "extra_requirements": "p_extra"}
+               "extra_requirements": "p_extra", "check_h1b_history": "p_h1b"}
 
 
 def set_widgets(profile: dict) -> None:
@@ -125,6 +126,9 @@ with side:
                                   format_func=lambda m: calendar.month_abbr[m],
                                   help="'2027 Winter' 默认按 Dec 2027；若指 2027 年初请改成 Jan–Mar")
         reject_no_sp = st.toggle("JD 写明不 sponsor → 直接放弃", key="p_reject")
+        check_h1b = st.toggle("JD 没提签证时，查公司的 H-1B 记录", key="p_h1b",
+                              help="自动查 h1bdata.info（美国劳工部公开数据）；常年办 H-1B 的大公司直接认定。"
+                                   "有记录 = 可以 sponsor。MyVisaJobs / H1BGrader 会给出核实链接。")
         use_llm = st.toggle("用 Claude 深度分析技能 (需 API key)", key="p_llm")
         threshold = st.slider("投递阈值 (fit score)", 30, 90, step=5, key="p_threshold")
         extra = st.text_area("其他必备条件 (每行一条)", key="p_extra", height=110,
@@ -132,7 +136,8 @@ with side:
 
     profile = {"resume": resume, "visa_status": visa, "grad_year": int(grad_year),
                "grad_month": int(grad_month), "reject_no_sponsorship": reject_no_sp,
-               "use_llm": use_llm, "apply_threshold": threshold, "extra_requirements": extra}
+               "use_llm": use_llm, "apply_threshold": threshold, "extra_requirements": extra,
+               "check_h1b_history": check_h1b}
     if LOCAL and profile != ss.get("_saved_profile"):
         save_profile(profile)
         ss._saved_profile = profile
@@ -156,7 +161,8 @@ LABEL = {APPLY: "✅ 投！APPLY", MAYBE: "🤔 可以考虑 MAYBE", SKIP: "⛔ 
 
 def analyze(jd_text: str, url: str, title: str = "", company: str = ""):
     """Screen one JD and record it in history. Returns the Verdict (or raises)."""
-    v = screen(jd_text, profile, api_key=api_key if profile["use_llm"] else "", model=model)
+    v = screen(jd_text, profile, api_key=api_key if profile["use_llm"] else "", model=model, company=company,
+               title=title)
     v.title, v.company = v.title or title, v.company or company
     row = history_row(verdict=v.decision, score=v.score if v.score is not None else "",
                       company=v.company, title=v.title, url=url, reason=v.reason)
@@ -179,6 +185,9 @@ def render_result(v, jd_text: str, show_head: bool = True):
         with st.expander(f"{ICON[s.status]}  {s.step} — {s.summary}", expanded=s.status in (FAIL, WARN)):
             for e in s.evidence or ["(no direct quote)"]:
                 st.markdown(f"> {e}")
+    if v.sponsor is not None:
+        links = " · ".join(f"[{name}]({href})" for name, href in v.sponsor.links.items())
+        st.caption(f"🔎 核实 {v.sponsor.company} 的 H-1B 记录：{links}")
 
     rep = v.report
     if rep is not None:
@@ -208,7 +217,9 @@ with main:
     if mode == "单个岗位":
         url = st.text_input("JD URL", placeholder="🔍  粘贴职位链接 (Greenhouse / Lever / Workday / LinkedIn / 官网…)",
                             label_visibility="collapsed", key="url")
-        b1, b2, _ = st.columns([1, 1, 3])
+        b1, b2, b3 = st.columns([1, 1, 3])
+        company_in = b3.text_input("公司名", key="company", label_visibility="collapsed",
+                                   placeholder="公司名（可选，用于查 H-1B 记录；留空自动识别）")
         go = b1.button("🎯 分析适配度", type="primary", width="stretch")
 
         def _clear():
@@ -243,7 +254,7 @@ with main:
                     st.warning("还没有上传简历 — 只会执行公民身份 / 签证 / 毕业时间三步筛选。")
                 with st.spinner("筛选中… (Step 1 命中会直接停止)"):
                     try:
-                        ss.result = (analyze(jd_text, url, title, company), jd_text)
+                        ss.result = (analyze(jd_text, url, title, company_in.strip() or company), jd_text)
                     except Exception as e:  # surface API errors without killing the page
                         st.error(f"分析失败: {e}")
 
@@ -257,8 +268,10 @@ with main:
         st.markdown("同一家公司有多个岗位、但只允许投 1–3 个时用：每行粘一个链接，按**适配度**和**难度**排序，选出最值得投的。")
         urls_raw = st.text_area("JD 链接（每行一个）", key="multi_urls", height=140,
                                 placeholder="https://job-boards.greenhouse.io/acme/jobs/123\nhttps://job-boards.greenhouse.io/acme/jobs/456")
-        c1, c2, _ = st.columns([1.2, 1.2, 2])
+        c1, c2, c3 = st.columns([1.2, 1.2, 2])
         max_apply = c1.number_input("最多可投几个", 1, 10, 2, key="multi_max")
+        multi_company = c3.text_input("公司名（可选，用于查 H-1B 记录）", key="multi_company",
+                                      placeholder="留空则从页面自动识别")
         go_multi = c2.button("🎯 对比这些岗位", type="primary", width="stretch")
 
         urls = list(dict.fromkeys(u.strip() for u in urls_raw.splitlines() if u.strip()))
@@ -297,10 +310,14 @@ with main:
 
                 results = []
                 with st.spinner(f"分析 {len(jds)} 个岗位…"):
+                    # same company for every job: look it up once before the parallel run
+                    if profile["check_h1b_history"] and multi_company.strip():
+                        check_sponsor(multi_company.strip())
                     with ThreadPoolExecutor(max_workers=4) as pool:
                         futures = {u: pool.submit(screen, jd, profile,
-                                                  api_key=api_key if profile["use_llm"] else "", model=model)
-                                   for u, (jd, _, _) in jds.items()}
+                                                  api_key=api_key if profile["use_llm"] else "", model=model,
+                                                  company=multi_company.strip() or co, title=t)
+                                   for u, (jd, t, co) in jds.items()}
                     for u, fut in futures.items():
                         jd, title, company = jds[u]
                         try:

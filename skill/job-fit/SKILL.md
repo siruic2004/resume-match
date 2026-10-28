@@ -24,6 +24,11 @@ line, and do not evaluate anything else. Ignore EEO boilerplate ("without regard
 **Step 2 — Visa.** Classify: H-1B sponsorship offered (best) / OPT-CPT-F-1 welcome / not mentioned
 (usually fine for CPT/OPT, flag H-1B as unknown) / explicitly no sponsorship now or in future
 (→ SKIP unless the user's profile has `reject_no_sponsorship: false`).
+When the JD is silent, check the company's H-1B filing history: run
+`python -I -c "from jobfit.sponsor import check_sponsor; print(check_sponsor('<Company>').describe())"`
+from the repo root (h1bdata.info + a list of large sponsors), or search MyVisaJobs / H1BGrader.
+Any recent filings → the company can sponsor → treat step 2 as passed. A JD that explicitly says
+"no sponsorship" still wins over history.
 
 **Step 3 — Graduation.** Compare Dec 2027 against any graduation window, class year, "must have
 graduated by", or "returning to school" requirement. Out of window → SKIP.
