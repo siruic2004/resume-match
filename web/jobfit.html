@@ -1,0 +1,654 @@
+<title>JobFit</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a search-engine front door (one big pill input) over a results column + a sticky side panel for resume & requirements. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --sunken: #eef0f4;
+  --ink: #161b26;
+  --muted: #5c6577;
+  --line: #d9dde5;
+  --accent: #2346d6;
+  --accent-ink: #ffffff;
+  --go: #14804a;   --go-bg: #e3f4ea;
+  --maybe: #a5640a; --maybe-bg: #fbf0dc;
+  --stop: #c0322b; --stop-bg: #fbe5e3;
+  --unk: #5c6577;  --unk-bg: #eceef2;
+  --font-display: "Bricolage Grotesque", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #10131a; --surface: #181c25; --sunken: #1f2430; --ink: #e8ebf2; --muted: #9aa3b5; --line: #2c3240;
+  --accent: #7d95ff; --accent-ink: #0d1020;
+  --go: #5fd394; --go-bg: #15301f; --maybe: #f0b65a; --maybe-bg: #33280f; --stop: #ff7d74; --stop-bg: #3a1a18;
+  --unk: #9aa3b5; --unk-bg: #232835; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #10131a; --surface: #181c25; --sunken: #1f2430; --ink: #e8ebf2; --muted: #9aa3b5; --line: #2c3240;
+  --accent: #7d95ff; --accent-ink: #0d1020;
+  --go: #5fd394; --go-bg: #15301f; --maybe: #f0b65a; --maybe-bg: #33280f; --stop: #ff7d74; --stop-bg: #3a1a18;
+  --unk: #9aa3b5; --unk-bg: #232835; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+button, input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- front door ---------- */
+.door { display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 12px; }
+.brand { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.4rem, 7vw, 3.6rem); letter-spacing: -0.03em; line-height: 1; margin: 0; }
+.brand b { color: var(--accent); font-weight: 800; }
+.steps { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.steps span { font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.search { width: 100%; max-width: 760px; display: flex; align-items: center; gap: 8px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 6px 6px 20px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 18px rgba(20,30,60,.06); }
+.search:focus-within { border-color: var(--accent); }
+.search svg { flex: none; color: var(--muted); }
+.search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; padding: 10px 0; font-size: 16px; }
+.btn { border: 0; border-radius: 999px; padding: 10px 18px; font-weight: 600; cursor: pointer; background: var(--accent); color: var(--accent-ink); white-space: nowrap; }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn.small { padding: 6px 12px; font-size: 13px; }
+.hint { color: var(--muted); font-size: 13px; text-align: center; max-width: 640px; margin: 0; }
+
+.paste { width: 100%; max-width: 760px; display: flex; flex-direction: column; gap: 8px; }
+.paste summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.notice { border: 1px solid var(--maybe); background: var(--maybe-bg); color: var(--ink); border-radius: var(--radius); padding: 10px 14px; font-size: 14px; }
+.notice a { color: var(--accent); word-break: break-all; }
+textarea { width: 100%; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 12px 14px; resize: vertical; line-height: 1.5; }
+textarea:focus { outline: none; border-color: var(--accent); }
+
+/* ---------- main grid ---------- */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+@media (min-width: 901px) { .side { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); } }
+.tabs { display: flex; gap: 4px; background: var(--sunken); padding: 4px; border-radius: 999px; }
+.tabs button { flex: 1; border: 0; background: transparent; border-radius: 999px; padding: 6px 8px; cursor: pointer; font-size: 13px; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+label.f input, label.f select { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 10px; color: var(--ink); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.switch input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.small-note { font-size: 12px; color: var(--muted); margin: 0; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+
+/* ---------- verdict ---------- */
+.verdict { border-radius: 14px; padding: 18px 20px; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: center; border: 1px solid; }
+.verdict.APPLY { background: var(--go-bg); border-color: var(--go); }
+.verdict.MAYBE { background: var(--maybe-bg); border-color: var(--maybe); }
+.verdict.SKIP { background: var(--stop-bg); border-color: var(--stop); }
+.verdict h2 { font-family: var(--font-display); font-size: 1.9rem; margin: 0; letter-spacing: -0.02em; line-height: 1.1; }
+.verdict.APPLY h2 { color: var(--go); } .verdict.MAYBE h2 { color: var(--maybe); } .verdict.SKIP h2 { color: var(--stop); }
+.verdict .who { font-weight: 600; grid-column: 1; }
+.verdict .why { grid-column: 1 / -1; color: var(--ink); }
+.score { grid-row: 1 / 3; grid-column: 2; text-align: right; }
+.score .n { font-family: var(--font-mono); font-size: 2.2rem; font-weight: 500; line-height: 1; }
+.score .d { font-size: 12px; color: var(--muted); }
+.tag { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--sunken); color: var(--muted); }
+
+.checks { display: flex; flex-direction: column; gap: 8px; }
+.check { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.check summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 12px 14px; }
+.check summary::-webkit-details-marker { display: none; }
+.pill { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .05em; padding: 3px 8px; border-radius: 6px; min-width: 64px; text-align: center; }
+.pill.pass { background: var(--go-bg); color: var(--go); } .pill.fail { background: var(--stop-bg); color: var(--stop); }
+.pill.warn { background: var(--maybe-bg); color: var(--maybe); } .pill.unclear { background: var(--unk-bg); color: var(--unk); }
+.check .t { font-weight: 600; } .check .s { color: var(--muted); font-size: 14px; }
+.ev { padding: 0 14px 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.ev blockquote { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line); background: var(--sunken); border-radius: 0 6px 6px 0; font-size: 13px; overflow-wrap: anywhere; }
+
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--sunken); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.cat { font-size: 11px; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.cat.core_ds { background: var(--go-bg); color: var(--go); } .cat.learnable_domain { background: var(--maybe-bg); color: var(--maybe); }
+.cat.sde_out_of_scope { background: var(--stop-bg); color: var(--stop); } .cat.other { background: var(--unk-bg); color: var(--unk); }
+h3 { font-family: var(--font-display); font-size: 1.15rem; margin: 6px 0 0; letter-spacing: -0.01em; }
+ul.tips { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.thinking { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; transform: scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+.hist { display: flex; flex-direction: column; }
+.hist .item { display: grid; grid-template-columns: 62px 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.hist .item:last-child { border-bottom: 0; }
+.hist .item .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+</style>
+
+<div class="wrap">
+  <header class="door">
+    <h1 class="brand">Job<b>Fit</b></h1>
+    <div class="steps" aria-label="筛选顺序"><span>1 公民身份</span><span>2 OPT/CPT/H-1B</span><span>3 毕业时间</span><span>4 技能匹配</span></div>
+    <form class="search" id="searchForm" role="search">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <input id="q" type="text" autocomplete="off" placeholder="粘贴职位链接，或直接把整段 JD 粘进来" aria-label="JD 链接或 JD 文本">
+      <button class="btn" id="go" type="submit">分析适配度</button>
+    </form>
+    <div class="paste">
+      <div class="notice" id="urlNotice" hidden></div>
+      <details id="pasteBox">
+        <summary>手动粘贴完整 JD</summary>
+        <textarea id="jd" rows="10" placeholder="把整个 JD 复制进来（包括 Qualifications / Benefits / 签证说明部分）"></textarea>
+      </details>
+    </div>
+  </header>
+
+  <div class="grid">
+    <main class="panel" id="results" aria-live="polite"></main>
+
+    <aside class="panel side">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="t-resume" aria-selected="true" data-tab="resume">简历</button>
+        <button role="tab" id="t-req" aria-selected="false" data-tab="req">必备条件</button>
+        <button role="tab" id="t-cfg" aria-selected="false" data-tab="cfg">保存 / 历史</button>
+      </div>
+
+      <section data-pane="resume" class="checks">
+        <label class="f">简历文本（从 PDF/Word 全选复制粘贴即可）
+          <textarea id="resume" rows="14" placeholder="Education… Experience… Skills: Python, SQL, …"></textarea>
+        </label>
+        <label class="f">或上传 .txt / .md 文件
+          <input id="resumeFile" type="file" accept=".txt,.md,text/plain">
+        </label>
+        <p class="small-note" id="resumeCount">还没有简历</p>
+      </section>
+
+      <section data-pane="req" class="checks" hidden>
+        <label class="f">签证身份 <input id="visa" type="text"></label>
+        <div class="row2">
+          <label class="f">毕业年份 <select id="gy"></select></label>
+          <label class="f">毕业月份 <select id="gm"></select></label>
+        </div>
+        <p class="small-note">"2027 Winter" 默认按 2027 年 12 月；如果指 2027 年初，改成 1–3 月。</p>
+        <label class="switch"><span>JD 写明不 sponsor → 直接放弃</span><input id="rejectNoSp" type="checkbox"></label>
+        <label class="switch"><span>用 Claude 深度分析技能（用你自己的 Claude 额度）</span><input id="useClaude" type="checkbox"></label>
+        <label class="f">投递阈值 <span class="mono" id="thrVal"></span>
+          <input id="thr" type="range" min="30" max="90" step="5">
+        </label>
+        <label class="f">其他必备条件（每行一条）
+          <textarea id="extra" rows="4" placeholder="必须是 internship / co-op&#10;地点在 NY 或 Remote&#10;不接受 PhD only"></textarea>
+        </label>
+      </section>
+
+      <section data-pane="cfg" class="checks" hidden>
+        <p class="small-note">简历和设置只存在你自己的浏览器里，别人打开这个链接看不到。换电脑或清缓存前，先导出一份。</p>
+        <div class="btnrow">
+          <button class="btn small" id="exportBtn" type="button">导出配置</button>
+          <button class="btn small ghost" id="copyBtn" type="button">复制配置文本</button>
+        </div>
+        <label class="f">导入配置（.json）<input id="importFile" type="file" accept=".json,application/json"></label>
+        <p class="small-note" id="cfgMsg"></p>
+        <h3>历史记录</h3>
+        <div class="hist" id="hist"><p class="small-note">分析过的岗位会出现在这里。</p></div>
+        <div class="btnrow"><button class="btn small ghost" id="exportHist" type="button">导出历史 CSV</button></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+/* ================= storage (this viewer's browser only) ================= */
+const DEFAULTS = { resume: "", visa_status: "F-1 (CPT now, OPT / STEM OPT after graduation)", grad_year: 2027, grad_month: 12,
+  reject_no_sponsorship: true, use_llm: true, apply_threshold: 65, extra_requirements: "" };
+const store = {
+  get(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+let profile = normalize(store.get("jobfit.profile.v1", {}));
+let history = store.get("jobfit.history.v1", []);
+function normalize(p) { const o = {}; for (const k in DEFAULTS) o[k] = (p && p[k] !== undefined) ? p[k] : DEFAULTS[k]; return o; }
+
+/* ================= rules (ported from jobfit/rules.py) ================= */
+const PASS = "pass", WARN = "warn", FAIL = "fail", UNCLEAR = "unclear";
+const US = String.raw`(?:u\.?\s?s\.?(?:a\.?)?|united\s+states)`;
+const R = (s) => new RegExp(s);
+
+function splitSentences(text) {
+  return text.split(/(?<=[a-z0-9)][.!?])\s+|(?<=;)\s+|\n+|•|·/).map(s => s.trim()).filter(s => s.length > 3);
+}
+function find(patterns, sentences, skipNegated) {
+  return sentences.filter(s => {
+    const low = s.toLowerCase();
+    if (skipNegated && /\b(?:not|no|never)\s+(?:be\s+)?(?:required|necessary|needed)/.test(low)) return false;
+    return patterns.some(p => p.test(low));
+  });
+}
+
+const CITIZENSHIP = [
+  String.raw`\b${US}\s+citizen(?:ship)?\s+(?:is\s+|are\s+)?(?:required|mandatory|needed|a\s+must)`,
+  String.raw`\bmust\s+(?:be|hold|have|possess)\s+(?:a\s+)?${US}\s+citizen`,
+  String.raw`\brequires?\s+${US}\s+citizenship`,
+  String.raw`\b(?:only\s+${US}\s+citizens|${US}\s+citizens?\s+only)`,
+  String.raw`\b${US}\s+citizens?\s+(?:or|and/or|/)\s+(?:lawful\s+)?(?:permanent\s+residents?|green\s*card)`,
+  String.raw`\bcitizenship\s+(?:is\s+)?required`,
+  String.raw`\bmust\s+be\s+(?:a\s+)?(?:citizen|permanent\s+resident|green\s*card\s+holder)`,
+  String.raw`\bpermanent\s+(?:\w+\s+){0,2}work\s+authori[sz]ation`,
+  String.raw`\bauthori[sz]ed\s+to\s+work\b.{0,60}\bpermanent(?:ly|\s+basis)?\b`,
+  String.raw`\b(?:green\s*card|permanent\s+residents?)\s+(?:holders?\s+)?(?:only|required)`,
+  String.raw`\b(?:active|current|existing|obtain|maintain|eligib\w*\s+(?:to|for))\s+(?:an?\s+)?(?:\w+\s+){0,2}security\s+clearance`,
+  String.raw`\bsecurity\s+clearance\s+(?:is\s+)?required`,
+  String.raw`\b(?:ts/sci|top\s+secret(?:\s+clearance)?|secret\s+clearance)\b`,
+  String.raw`\bitar\b`,
+  String.raw`\b${US}\s+persons?\b.{0,40}\b(?:itar|ear|export|22\s*cfr|required)`,
+  String.raw`\bexport\s+control\w*\b.{0,80}\b(?:citizen|u\.?s\.?\s+person)`,
+].map(R);
+
+const NO_SPONSOR = [
+  String.raw`\b(?:unable|not\s+able|cannot|can't|can\s+not|will\s+not|won't|does\s+not|do\s+not|doesn't|don't|not\s+in\s+a\s+position)\s+(?:to\s+)?(?:\w+\s+){0,3}sponsor`,
+  String.raw`\bno\s+(?:\w+\s+)?(?:visa\s+|immigration\s+)?sponsorship`,
+  String.raw`\bsponsorship\s+(?:is\s+|will\s+)?(?:not|n't)\b`,
+  String.raw`\bsponsorship\s+(?:is\s+)?unavailable`,
+  String.raw`\bwithout\s+(?:the\s+)?(?:need\s+for\s+|requiring\s+|requirement\s+of\s+)?(?:current\s+or\s+future\s+|future\s+)?(?:\w+\s+){0,2}sponsorship`,
+  String.raw`\bnot\s+(?:be\s+)?eligible\s+for\s+(?:\w+\s+)?sponsorship`,
+  String.raw`\b(?:opt|cpt|f-?1|stem\s+opt)\b.{0,50}\b(?:not\s+(?:eligible|accepted|considered|supported)|ineligible)`,
+].map(R);
+const H1B = [
+  String.raw`\bh-?1-?b\b.{0,40}\b(?:sponsor|available|offered|support|transfer)`,
+  String.raw`\b(?:visa|immigration)\s+sponsorship\s+(?:is\s+|may\s+be\s+)?(?:available|offered|provided|possible)`,
+  String.raw`\b(?:will|can|does|do|may|able\s+to)\s+(?:also\s+)?sponsor`,
+  String.raw`\bsponsorship\s+(?:is\s+|may\s+be\s+)?available`,
+  String.raw`\bopen\s+to\s+sponsor`,
+].map(R);
+const OPT_CPT = [String.raw`\b(?:stem\s+)?opt\b`, String.raw`\bcpt\b`, String.raw`\bf-?1\b`, String.raw`\binternational\s+students?\b`,
+  String.raw`\bcurricular\s+practical\s+training\b`, String.raw`\boptional\s+practical\s+training\b`].map(R);
+
+const step = (name, status, summary, evidence = []) => ({ step: name, status, summary, evidence });
+
+function checkCitizenship(jd) {
+  const hits = find(CITIZENSHIP, splitSentences(jd), true);
+  return hits.length
+    ? step("1. 公民身份 / 永久工作许可", FAIL, "JD 要求美国公民 / 绿卡 / 安全许可 — 直接放弃", hits.slice(0, 5))
+    : step("1. 公民身份 / 永久工作许可", PASS, "没有发现公民 / 绿卡 / clearance 要求");
+}
+function checkVisa(jd, rejectNoSp) {
+  const name = "2. 签证 (OPT / CPT / H-1B)";
+  const sents = splitSentences(jd);
+  const no = find(NO_SPONSOR, sents);
+  const pos = sents.filter(s => !no.includes(s));
+  const h1b = find(H1B, pos), opt = find(OPT_CPT, pos);
+  if (no.length && !(h1b.length || opt.length)) return [step(name, rejectNoSp ? FAIL : WARN, "JD 写明不提供签证 sponsorship", no.slice(0, 4)), "no_sponsorship"];
+  if (no.length) return [step(name, WARN, "信号矛盾：有 sponsorship 限制，但也提到了 OPT/CPT/H-1B，需要人工细看", [...no, ...h1b, ...opt].slice(0, 5)), "mixed"];
+  if (h1b.length) return [step(name, PASS, "提到 H-1B / 签证 sponsorship，最理想", [...h1b, ...opt].slice(0, 4)), "h1b"];
+  if (opt.length) return [step(name, PASS, "提到 OPT / CPT / 国际学生", opt.slice(0, 4)), "opt_cpt"];
+  return [step(name, UNCLEAR, "JD 没提签证。CPT/OPT 一般没问题；H-1B 未知，可以去 h1bdata.info 查这家公司"), "none_mentioned"];
+}
+
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const SEASONS = { spring: 5, summer: 8, fall: 12, autumn: 12, winter: 12 };
+const DATE_RE = /\b(?:(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?,?\s+|(spring|summer|fall|autumn|winter)\s+)?(?:of\s+)?(20[2-3]\d)\b/g;
+const GRAD_CONTEXT = /graduat|class\s+of|degree\s+(?:completion|conferral)|complet\w*\s+(?:your|their|a|the)?\s*degree|expected\s+(?:to\s+)?(?:graduat|complet)|enrolled|pursuing|returning\s+to\s+school|remaining\s+after/;
+
+function parseDates(s) {
+  return [...s.matchAll(DATE_RE)].map(m => {
+    const y = +m[3];
+    if (m[1]) return [y, MONTHS[m[1].slice(0, 3)], true];
+    if (m[2]) return [y, SEASONS[m[2]], true];
+    return [y, 0, false];
+  });
+}
+function checkGraduation(jd, gy, gm) {
+  const name = "3. 毕业时间";
+  const me = gy * 12 + gm;
+  const good = [], bad = [], hints = [];
+  const key = (d, upper) => d[0] * 12 + (d[2] ? d[1] : (upper ? 12 : 1));
+  for (const s of splitSentences(jd)) {
+    const low = s.toLowerCase();
+    if (!GRAD_CONTEXT.test(low)) continue;
+    const dates = parseDates(low);
+    if (!dates.length) {
+      if (/returning\s+to\s+school|remaining\s+after|at\s+least\s+one\s+(?:more\s+)?(?:semester|quarter|term)/.test(low)) hints.push(s);
+      continue;
+    }
+    let ok;
+    if (dates.length >= 2 && /between|from|\bto\b|through|-|–/.test(low)) ok = key(dates[0]) <= me && me <= key(dates[1], true);
+    else if (/\b(?:by|before|no\s+later\s+than|prior\s+to)\b/.test(low)) ok = me <= key(dates[0], true);
+    else if (/\b(?:after|or\s+later|no\s+earlier\s+than)\b/.test(low)) ok = me >= key(dates[0]);
+    else if (/\bclass\s+of\b/.test(low) || !dates[0][2]) ok = dates[0][0] === gy;
+    else ok = Math.abs(dates[0][0] * 12 + dates[0][1] - me) <= 3;
+    (ok ? good : bad).push(s);
+  }
+  if (bad.length && !good.length) return step(name, FAIL, "JD 的毕业时间范围不包含你的毕业时间", bad.slice(0, 4));
+  if (bad.length) return step(name, WARN, "JD 提到多个毕业时间，部分不符", [...bad, ...good].slice(0, 4));
+  if (good.length) return step(name, PASS, "你的毕业时间在 JD 要求的范围内", good.slice(0, 4));
+  if (hints.length) return step(name, PASS, "JD 要求实习后仍在读 — 符合你的情况", hints.slice(0, 3));
+  return step(name, UNCLEAR, "JD 没有明确的毕业时间要求");
+}
+
+const SDE = { "C++": /\bc\+\+/i, "C#": /\bc#/i, "Java": /\bjava\b(?!\s*script)/i, "Golang": /\bgolang\b/i, "Rust": /\brust\b/i, "Kotlin": /\bkotlin\b/i,
+  "Swift/iOS": /\bswift\b|\bios\s+develop/i, "Android": /\bandroid\b/i, "React": /\breact(?:\.js)?\b/i, "Angular": /\bangular\b/i, "Vue": /\bvue(?:\.js)?\b/i,
+  "Node.js": /\bnode(?:\.js)?\b/i, "TypeScript": /\btypescript\b/i, "JavaScript": /\bjavascript\b/i, "Frontend": /\bfront[\s-]?end\b/i, "Backend": /\bback[\s-]?end\b/i,
+  "Full-stack": /\bfull[\s-]?stack\b/i, "Microservices": /\bmicroservices?\b/i, "Distributed systems": /\bdistributed\s+systems?\b/i, "System design": /\bsystem\s+design\b/i,
+  "Kubernetes": /\bkubernetes\b|\bk8s\b/i, "Embedded/firmware": /\bembedded\b|\bfirmware\b|\brtos\b/i, "Verilog/FPGA": /\bverilog\b|\bvhdl\b|\bfpga\b/i,
+  "Low-latency": /\blow[\s-]latency\b/i, "Compilers/OS": /\bcompilers?\b|\boperating\s+systems?\b|\blinux\s+kernel\b/i,
+  "DS&A": /\bdata\s+structures\s+(?:and|&)\s+algorithms\b/i, "Software engineering": /\bsoftware\s+(?:engineering|development)\s+(?:experience|skills|best\s+practices)/i };
+const DS = { "Python": /\bpython\b/i, "R": /(?<![\w-])R(?![\w-])/, "SQL": /\bsql\b/i, "Pandas": /\bpandas\b/i, "NumPy": /\bnumpy\b/i, "scikit-learn": /\bscikit|\bsklearn\b/i,
+  "Machine learning": /\bmachine\s+learning\b|\bml\b/i, "Deep learning": /\bdeep\s+learning\b|\bneural\s+net/i, "PyTorch": /\bpytorch\b/i, "TensorFlow": /\btensorflow\b/i,
+  "Statistics": /\bstatistic/i, "Regression": /\bregression\b/i, "A/B testing": /\ba\/b\s+test|\bexperimentation\b/i, "Hypothesis testing": /\bhypothesis\s+test/i,
+  "Causal inference": /\bcausal\b/i, "Time series": /\btime[\s-]series\b|\bforecast/i, "NLP": /\bnlp\b|\bnatural\s+language/i, "LLM / GenAI": /\bllms?\b|\bgenerative\s+ai\b|\bgenai\b/i,
+  "Tableau": /\btableau\b/i, "Power BI": /\bpower\s?bi\b/i, "Looker": /\blooker\b/i, "Excel": /\bexcel\b/i, "Spark": /\bspark\b|\bpyspark\b/i, "Airflow": /\bairflow\b/i,
+  "dbt": /\bdbt\b/i, "Snowflake": /\bsnowflake\b/i, "BigQuery": /\bbigquery\b/i, "Databricks": /\bdatabricks\b/i, "AWS": /\baws\b/i, "GCP": /\bgcp\b|\bgoogle\s+cloud\b/i,
+  "Azure": /\bazure\b/i, "ETL": /\betl\b|\belt\b/i, "Data visualization": /\bdata\s+visuali[sz]ation\b/i, "SAS": /\bsas\b/i, "MATLAB": /\bmatlab\b/i, "Git": /\bgit\b/i };
+const DOMAINS = { "Finance": /\bfinanc/i, "Accounting": /\baccounting\b/i, "Marketing": /\bmarketing\b/i, "Risk": /\brisk\b/i, "Credit": /\bcredit\b/i, "Fraud": /\bfraud\b/i,
+  "Probability": /\bprobabilit/i, "Stochastic": /\bstochastic\b/i, "Actuarial / insurance": /\bactuar|\binsurance\b/i, "Pricing": /\bpricing\b/i, "Supply chain": /\bsupply\s+chain\b/i,
+  "Healthcare": /\bhealthcare\b|\bclinical\b/i, "Econometrics": /\beconometric/i, "Product analytics": /\bproduct\s+analytics\b/i, "CRM": /\bcrm\b/i };
+const hits = (table, text) => Object.keys(table).filter(k => table[k].test(text));
+
+function checkSkillsKeywords(jd, resume) {
+  const name = "4. 技能匹配（关键词）";
+  const jdDs = hits(DS, jd), have = new Set(hits(DS, resume));
+  const sdeHave = new Set(hits(SDE, resume)), sdeMissing = hits(SDE, jd).filter(s => !sdeHave.has(s));
+  const domains = hits(DOMAINS, jd);
+  const matched = jdDs.filter(s => have.has(s)), missing = jdDs.filter(s => !have.has(s));
+  let score = jdDs.length ? Math.round(100 * matched.length / jdDs.length) : 50;
+  score = Math.max(0, score - 12 * sdeMissing.length);
+  const ev = [`匹配的 DS 技能：${matched.join(", ") || "—"}`, `缺少的 DS 技能：${missing.join(", ") || "—"}`,
+    `你没有的 SDE 技能：${sdeMissing.join(", ") || "—"}`, `可 1–2 周速成的领域：${domains.join(", ") || "—"}`];
+  if (sdeMissing.length >= 3) return [step(name, FAIL, `看起来是 SDE 岗位（${sdeMissing.length} 项你没有的软件工程技能）`, ev), score];
+  return [step(name, score >= 60 ? PASS : score >= 40 ? WARN : FAIL, `关键词匹配度 ${score}/100`, ev), score];
+}
+
+/* ================= Claude (viewer's own account) ================= */
+let sample = null;
+(async () => { try { sample = await window.claude?.use?.("sample"); } catch { sample = null; } })();
+
+function claudePrompt(jd, p) {
+  const months = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return `You screen job postings for an international F-1 student who wants Data Science / Data Analyst / ML / quantitative-analytics roles. Be strict and evidence-based: quote the JD.
+
+Evaluate in this order:
+1. Citizenship: does the JD require U.S. citizenship, green card / permanent work authorization, a security clearance, or ITAR "U.S. person" status? Ignore EEO boilerplate.
+2. Visa: "h1b" = sponsorship explicitly offered; "opt_cpt" = OPT/CPT/F-1 students explicitly welcome; "none_mentioned"; "no_sponsorship" = explicitly will not sponsor now or in the future.
+3. Graduation: compare the candidate's expected graduation with any graduation window, class year, "returning to school", or "must have graduated by" requirement: "yes", "no" or "unclear".
+4. Skills: read the JD's actual requirements, not the job title. For each meaningful required or preferred skill, classify it:
+   - core_ds: Python, SQL, statistics, ML, experimentation, BI/visualization, cloud data tools, etc.
+   - learnable_domain: domain knowledge learnable in 1-2 weeks (finance, marketing, risk, credit, fraud, probability, insurance, pricing, supply chain...).
+   - sde_out_of_scope: software-engineering skills that cannot be learned in two weeks (C++, Java/Go backend, distributed systems, system design, frontend/mobile, embedded, low-latency, production software development as the main job).
+   - other: degree level, years of experience, soft skills, etc.
+   have=true only if the resume shows it (directly or by clearly equivalent experience). A REQUIRED sde_out_of_scope skill the candidate lacks is a blocker; preferred ones are not.
+Give fit_score 0-100 for how competitive this resume is for this JD (ignore visa), and concrete, truthful resume tweaks.
+
+Candidate visa status: ${p.visa_status}
+Expected graduation: ${months[p.grad_month]} ${p.grad_year}
+Extra must-have conditions: ${p.extra_requirements.trim() || "none"}
+
+<resume>
+${p.resume.slice(0, 20000)}
+</resume>
+
+<job_description>
+${jd.slice(0, 40000)}
+</job_description>
+
+Reply with only one JSON object with exactly these keys:
+{"job_title": str, "company": str, "citizenship_blocked": bool, "citizenship_evidence": str,
+ "sponsorship": "h1b"|"opt_cpt"|"none_mentioned"|"no_sponsorship", "sponsorship_evidence": str,
+ "graduation_fit": "yes"|"no"|"unclear", "graduation_reasoning": str (in Chinese),
+ "skills": [{"skill": str, "category": "core_ds"|"learnable_domain"|"sde_out_of_scope"|"other", "required": bool, "have": bool, "note": str (in Chinese)}],
+ "sde_blockers": [str], "other_must_have_issues": [str (in Chinese)], "fit_score": int,
+ "summary": str (2-3 sentences in Chinese: apply or not, and why), "resume_tips": [str (in Chinese)]}`;
+}
+
+/* ================= pipeline (ported from jobfit/pipeline.py) ================= */
+const LABELS = { 1: "需要公民身份", 2: "不提供签证支持 / 不接受 OPT·CPT", 3: "毕业时间不符", 4: "技能超纲或匹配度过低" };
+function decide(steps, score, p) {
+  for (let i = 0; i < steps.length; i++) if (steps[i].status === FAIL) return { decision: "SKIP", score, reason: `Step ${i + 1}：${LABELS[i + 1]} — ${steps[i].summary}`, steps };
+  const t = p.apply_threshold;
+  if (score >= t && !steps.some(s => s.status === WARN)) return { decision: "APPLY", score, reason: "通过全部筛选，建议投递", steps };
+  if (score >= t - 15) return { decision: "MAYBE", score, reason: "基本符合，但有需要人工确认的地方", steps };
+  return { decision: "SKIP", score, reason: `匹配度 ${score} 低于阈值 ${t}`, steps };
+}
+
+async function screen(jd, p, ui) {
+  const steps = [];
+  const s1 = checkCitizenship(jd); steps.push(s1);
+  if (s1.status === FAIL) return { decision: "SKIP", score: null, reason: "需要美国公民 / 绿卡 / 安全许可 — 直接放弃，后面不再检查", steps };
+  const [s2] = checkVisa(jd, p.reject_no_sponsorship);
+  const s3 = checkGraduation(jd, p.grad_year, p.grad_month);
+  steps.push(s2, s3);
+
+  if (!p.resume.trim()) {
+    for (let i = 0; i < steps.length; i++) if (steps[i].status === FAIL) return { decision: "SKIP", score: null, reason: `Step ${i + 1} 未通过 — ${steps[i].summary}`, steps };
+    return { decision: "MAYBE", score: null, reason: "前三步通过；在右侧填入简历后才能做技能匹配", steps };
+  }
+
+  let note = "";
+  if (p.use_llm && sample) {
+    ui.thinking();
+    try {
+      const rep = await sample.json(claudePrompt(jd, p), { signal: ui.signal, effort: "medium" });
+      return mergeClaude(rep, steps, s2, s3, p);
+    } catch (e) {
+      if (e && e.code === "cancelled") note = "已停止 Claude 分析，改用关键词匹配。";
+      else if (e && (e.code === "not_granted" || e.code === "sampling_disabled")) note = "没有允许这个页面使用 Claude，已改用关键词匹配。";
+      else if (e && e.code === "rate_limited") note = "Claude 额度暂时用完或请求太频繁，已改用关键词匹配，稍后再试。";
+      else note = "Claude 分析没成功，已改用关键词匹配。可以再点一次分析。";
+    }
+  } else if (p.use_llm && !sample) {
+    note = "当前打开方式无法调用 Claude（需在 claude.ai 登录后打开），已改用关键词匹配。";
+  }
+  const [s4, score] = checkSkillsKeywords(jd, p.resume);
+  steps.push(s4);
+  const v = decide(steps, score, p);
+  v.note = note;
+  return v;
+}
+
+function mergeClaude(rep, steps, s2, s3, p) {
+  const arr = (x) => Array.isArray(x) ? x.map(String) : [];
+  if (rep.citizenship_blocked === true) {
+    steps[0] = step(steps[0].step, FAIL, "Claude 发现了公民身份 / clearance 要求", [String(rep.citizenship_evidence || "")]);
+    return { decision: "SKIP", score: null, reason: "需要美国公民 / 绿卡 / 安全许可 — 直接放弃", steps, report: rep, title: rep.job_title, company: rep.company };
+  }
+  const spMap = { h1b: PASS, opt_cpt: PASS, none_mentioned: UNCLEAR, no_sponsorship: p.reject_no_sponsorship ? FAIL : WARN };
+  let vs = spMap[rep.sponsorship] || UNCLEAR;
+  if (s2.status === FAIL) vs = FAIL;
+  const spLabel = { h1b: "提供 H-1B", opt_cpt: "接受 OPT/CPT", none_mentioned: "未提及签证", no_sponsorship: "不提供 sponsorship" }[rep.sponsorship] || "未知";
+  steps[1] = step(s2.step, vs, `Claude：${spLabel}。${s2.summary}`, [rep.sponsorship_evidence, ...s2.evidence].filter(Boolean).map(String));
+  let gs = { yes: PASS, no: FAIL, unclear: UNCLEAR }[rep.graduation_fit] || UNCLEAR;
+  if (s3.status === FAIL && gs !== PASS) gs = FAIL;
+  steps[2] = step(s3.step, gs, String(rep.graduation_reasoning || s3.summary), s3.evidence);
+  const score = Math.max(0, Math.min(100, parseInt(rep.fit_score, 10) || 0));
+  const blockers = arr(rep.sde_blockers);
+  const s4s = blockers.length ? FAIL : (score >= p.apply_threshold ? PASS : WARN);
+  steps.push(step("4. 技能与经历（Claude）", s4s, blockers.length ? `超纲 SDE 技能：${blockers.join(", ")}` : `匹配度 ${score}/100`, arr(rep.other_must_have_issues)));
+  const v = decide(steps, score, p);
+  v.report = rep; v.title = rep.job_title; v.company = rep.company;
+  const extra = arr(rep.other_must_have_issues);
+  if (extra.length && v.decision === "APPLY") { v.decision = "MAYBE"; v.reason = "不满足你的额外必备条件：" + extra.join("；"); }
+  return v;
+}
+
+/* ================= rendering ================= */
+const $ = (id) => document.getElementById(id);
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const k in (attrs || {})) { if (k === "class") el.className = attrs[k]; else if (k === "text") el.textContent = attrs[k]; else el.setAttribute(k, attrs[k]); }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return el;
+}
+const VERDICT = { APPLY: "投！APPLY", MAYBE: "可以考虑 MAYBE", SKIP: "不投 SKIP" };
+const PILL = { pass: "PASS", fail: "FAIL", warn: "CHECK", unclear: "UNKNOWN" };
+const CAT = { core_ds: "DS 核心", learnable_domain: "可速成领域", sde_out_of_scope: "SDE 超纲", other: "其他" };
+
+function renderResult(v, opts = {}) {
+  const box = $("results"); box.replaceChildren();
+  const head = [v.company, v.title].filter(Boolean).join(" — ");
+  box.append(h("div", { class: `verdict ${v.decision}` },
+    h("h2", { text: VERDICT[v.decision] }),
+    h("div", { class: "who" }, opts.example ? h("span", { class: "tag", text: "示例" }) : null, opts.example ? " " : null, head || "（未识别公司 / 职位）"),
+    h("div", { class: "score" }, v.score == null ? h("div", { class: "d", text: "未评分" }) : [h("div", { class: "n", text: v.score }), h("div", { class: "d", text: "fit / 100" })]),
+    h("div", { class: "why", text: v.reason })));
+  if (opts.example) box.append(h("p", { class: "small-note", text: "这是用一段示例 JD 和示例简历跑出来的结果。在上面粘贴你的 JD、右边填你的简历，就会换成你的结果。" }));
+  if (v.note) box.append(h("div", { class: "notice", text: v.note }));
+
+  box.append(h("div", { class: "checks" }, v.steps.map(s => {
+    const d = h("details", { class: "check" },
+      h("summary", null, h("span", { class: `pill ${s.status}`, text: PILL[s.status] }), h("div", null, h("div", { class: "t", text: s.step }), h("div", { class: "s", text: s.summary }))),
+      h("div", { class: "ev" }, (s.evidence.length ? s.evidence : ["（JD 中没有直接相关的原句）"]).map(e => h("blockquote", { text: e }))));
+    if (s.status === FAIL || s.status === WARN) d.open = true;
+    return d;
+  })));
+
+  const rep = v.report;
+  if (rep && Array.isArray(rep.skills) && rep.skills.length) {
+    box.append(h("h3", { text: "技能拆解" }));
+    box.append(h("div", { class: "tablebox" }, h("table", null,
+      h("thead", null, h("tr", null, ["技能", "类别", "必需", "你有", "说明"].map(t => h("th", { text: t })))),
+      h("tbody", null, rep.skills.map(k => h("tr", null,
+        h("td", { text: String(k.skill || "") }),
+        h("td", null, h("span", { class: `cat ${CAT[k.category] ? k.category : "other"}`, text: CAT[k.category] || "其他" })),
+        h("td", { text: k.required ? "必需" : "加分" }),
+        h("td", { text: k.have ? "✓ 有" : "✗ 无" }),
+        h("td", { text: String(k.note || "") })))))));
+  }
+  if (rep && rep.summary) box.append(h("h3", { text: "总结" }), h("p", { text: String(rep.summary), style: "margin:0" }));
+  if (rep && Array.isArray(rep.resume_tips) && rep.resume_tips.length)
+    box.append(h("h3", { text: "简历可以这样改" }), h("ul", { class: "tips" }, rep.resume_tips.map(t => h("li", { text: String(t) }))));
+}
+
+function renderHistory() {
+  const el = $("hist"); el.replaceChildren();
+  if (!history.length) { el.append(h("p", { class: "small-note", text: "分析过的岗位会出现在这里。" })); return; }
+  for (const r of history.slice(0, 40)) {
+    el.append(h("div", { class: "item" },
+      h("span", { class: `pill ${r.verdict === "APPLY" ? "pass" : r.verdict === "SKIP" ? "fail" : "warn"}`, text: r.verdict }),
+      h("span", { class: "w", title: r.reason, text: [r.company, r.title].filter(Boolean).join(" — ") || r.url || "（手动粘贴的 JD）" }),
+      h("span", { class: "mono small-note", text: r.score === "" || r.score == null ? "—" : r.score })));
+  }
+}
+
+/* ================= side panel wiring ================= */
+function fillForm() {
+  $("resume").value = profile.resume; $("visa").value = profile.visa_status;
+  $("gy").value = profile.grad_year; $("gm").value = profile.grad_month;
+  $("rejectNoSp").checked = profile.reject_no_sponsorship; $("useClaude").checked = profile.use_llm;
+  $("thr").value = profile.apply_threshold; $("thrVal").textContent = profile.apply_threshold;
+  $("extra").value = profile.extra_requirements; updateResumeCount();
+}
+function readForm() {
+  profile = normalize({ resume: $("resume").value, visa_status: $("visa").value, grad_year: +$("gy").value, grad_month: +$("gm").value,
+    reject_no_sponsorship: $("rejectNoSp").checked, use_llm: $("useClaude").checked, apply_threshold: +$("thr").value, extra_requirements: $("extra").value });
+  $("thrVal").textContent = profile.apply_threshold; updateResumeCount();
+  store.set("jobfit.profile.v1", profile);
+}
+function updateResumeCount() {
+  const n = profile.resume.trim() ? profile.resume.trim().split(/\s+/).length : 0;
+  $("resumeCount").textContent = n ? `${n} 个词 · 已保存在本浏览器` : "还没有简历";
+}
+for (let y = 2024; y <= 2032; y++) $("gy").append(h("option", { value: y, text: y }));
+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].forEach((m, i) => $("gm").append(h("option", { value: i + 1, text: m })));
+["resume", "visa", "gy", "gm", "rejectNoSp", "useClaude", "thr", "extra"].forEach(id => $(id).addEventListener("input", readForm));
+["gy", "gm", "rejectNoSp", "useClaude"].forEach(id => $(id).addEventListener("change", readForm));
+
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-selected", x === b ? "true" : "false"));
+  document.querySelectorAll("[data-pane]").forEach(p => p.hidden = p.dataset.pane !== b.dataset.tab);
+}));
+
+$("resumeFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  $("resume").value = (await f.text()).trim(); readForm();
+});
+$("importFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try { const data = JSON.parse(await f.text()); if (typeof data !== "object" || !data) throw 0;
+    profile = normalize(data); store.set("jobfit.profile.v1", profile); fillForm(); $("cfgMsg").textContent = "配置已导入。";
+  } catch { $("cfgMsg").textContent = "这个文件不是 JobFit 导出的配置（需要 .json）。"; }
+  e.target.value = "";
+});
+const profileJson = () => JSON.stringify(profile, null, 2);
+async function saveFile(filename, data, msgEl) {
+  const dl = await window.claude?.use?.("downloads").catch(() => null);
+  if (!dl) { msgEl.textContent = "当前打开方式不能下载文件，请用「复制配置文本」，粘到一个 .json 文件里保存。"; return; }
+  try { await dl.save({ filename, data }); msgEl.textContent = `已保存 ${filename}。`; }
+  catch (e) { msgEl.textContent = e && e.code === "declined" ? "已取消保存。" : "保存没有成功，可以用「复制配置文本」代替。"; }
+}
+$("exportBtn").addEventListener("click", () => saveFile("jobfit-profile.json", profileJson(), $("cfgMsg")));
+$("copyBtn").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(profileJson()); $("cfgMsg").textContent = "已复制。粘到一个文本文件里，保存为 jobfit-profile.json。"; }
+  catch { $("cfgMsg").textContent = "浏览器不允许复制，请手动从简历栏复制保存。"; }
+});
+$("exportHist").addEventListener("click", () => {
+  const cols = ["time", "verdict", "score", "company", "title", "url", "reason"];
+  const esc = (x) => `"${String(x ?? "").replace(/"/g, '""')}"`;
+  saveFile("jobfit-history.csv", [cols.join(","), ...history.map(r => cols.map(c => esc(r[c])).join(","))].join("\n"), $("cfgMsg"));
+});
+
+/* ================= search flow ================= */
+const isUrl = (s) => /^(https?:\/\/|www\.)\S+$/i.test(s.trim()) || /^[\w-]+(\.[\w-]+)+\/\S*$/.test(s.trim());
+let ctl = null;
+
+$("searchForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = $("q").value.trim();
+  let jd = $("jd").value.trim();
+  $("urlNotice").hidden = true;
+
+  if (!jd && q && !isUrl(q)) jd = q;                  // whole JD pasted into the search bar
+  if (!jd) {
+    if (q && isUrl(q)) {
+      const href = /^https?:\/\//i.test(q) ? q : "https://" + q;
+      const n = $("urlNotice"); n.replaceChildren(
+        "网页版不能替你打开别的网站（浏览器安全限制）。请打开这个链接，复制整个 JD，粘到下面的框里，再点分析：",
+        h("br"), h("a", { href, target: "_blank", rel: "noopener noreferrer", text: href }));
+      n.hidden = false;
+    }
+    $("pasteBox").open = true; $("jd").focus();
+    return;
+  }
+
+  readForm();
+  const btn = $("go"); btn.disabled = true;
+  ctl = new AbortController();
+  const ui = {
+    signal: ctl.signal,
+    thinking() {
+      const stop = h("button", { class: "btn small ghost", type: "button", text: "停止" });
+      stop.addEventListener("click", () => ctl.abort());
+      $("results").replaceChildren(h("div", { class: "thinking" }, h("span", { class: "dot" }),
+        h("span", { text: "前三步已通过，Claude 正在对照简历看技能…（第一次会请你允许使用 Claude，通常 20–60 秒）" }), stop));
+    },
+  };
+  try {
+    const v = await screen(jd, profile, ui);
+    renderResult(v);
+    history.unshift({ time: new Date().toISOString().slice(0, 16).replace("T", " "), verdict: v.decision, score: v.score ?? "",
+      company: v.company || "", title: v.title || "", url: isUrl(q) ? q : "", reason: v.reason });
+    history = history.slice(0, 200); store.set("jobfit.history.v1", history); renderHistory();
+  } finally { btn.disabled = false; }
+});
+
+/* ================= example at rest ================= */
+const EX_JD = `Data Science Intern, Credit Risk Analytics (Summer 2027)
+We welcome international students on CPT / OPT to apply.
+Candidates should be pursuing a Master's degree with expected graduation between May 2027 and December 2027.
+Requirements: Python and SQL; statistics and regression; machine learning; A/B testing; Tableau or similar.
+Nice to have: knowledge of credit risk, probability, Spark.`;
+const EX_RESUME = "M.S. Applied Data Science. Python, SQL, pandas, scikit-learn, statistics, regression, A/B testing, Tableau, machine learning, AWS.";
+
+fillForm(); renderHistory();
+(() => {
+  const p = normalize({ ...DEFAULTS, resume: EX_RESUME, use_llm: false });
+  const steps = [checkCitizenship(EX_JD), checkVisa(EX_JD, true)[0], checkGraduation(EX_JD, 2027, 12)];
+  const [s4, score] = checkSkillsKeywords(EX_JD, EX_RESUME); steps.push(s4);
+  const v = decide(steps, score, p); v.company = "示例公司"; v.title = "Data Science Intern, Credit Risk";
+  renderResult(v, { example: true });
+})();
+</script>

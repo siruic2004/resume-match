@@ -1,67 +1,53 @@
-# 🎯 JobFit — 投不投，一键判断
+# 🎯 JobFit — 这个岗位投不投？
 
-A Google-style search bar for job descriptions. Paste a JD link, and JobFit screens it against your
-resume for an **F-1 international student targeting Data Science roles**:
+粘贴 JD，对照你的简历给出 **APPLY / MAYBE / SKIP**。为找 Data Science 岗位的 F-1 国际学生设计。
 
-| Step | Check | On failure |
-|---|---|---|
-| 1 | U.S. citizenship / green card / permanent work authorization / security clearance / ITAR | **Stop immediately** (no API call) |
-| 2 | OPT / CPT accepted, H-1B sponsorship (bonus) | SKIP if "no sponsorship" (toggle) |
-| 3 | Expected graduation (default **Dec 2027**) inside the JD's window | SKIP |
-| 4 | Skills from the JD body (not the title): DS core vs. learnable domain vs. SDE out-of-scope | SKIP if required SDE skills / low score |
+## 直接用
 
-Result: **APPLY / MAYBE / SKIP**, a fit score, quoted evidence, a skill table, and resume tweaks.
+**网页版（点开即用）：https://claude.ai/artifact/EU24GEsT3LmGMTeQ9E1FJp**
 
-## Features
-- **URL fetch** with native support for Greenhouse, Lever, Ashby, Workday, LinkedIn (guest view)
-  and any site with schema.org `JobPosting` data. If the page can't be read, a **manual paste box** opens.
-- **Resume panel** — upload PDF/DOCX/TXT or paste.
-- **Requirements panel** — visa status, graduation date, "no sponsorship = reject" toggle, apply
-  threshold, and free-text extra must-haves (location, internship only, …).
-- **Claude analysis** (Opus 5.5 by default) with a rules-only fallback when no API key is set.
-- **History** of every job you screened, downloadable as CSV.
+- 登录 Claude 账号后打开即可，不用安装，也不用 API key；分析用的是你自己的 Claude 额度。
+- 只能粘贴 JD 文本（网页不能替你打开别的网站）。简历和设置只存在你自己的浏览器里。
 
-## Two modes
+## 自己部署 Streamlit 版（能自动读取 JD 链接）
 
-| | Shared mode (default) | Local mode (`JOBFIT_LOCAL=1`) |
-|---|---|---|
-| Who | Friends using your deployed link | Just you, on your own computer |
-| Resume & settings | Only in the visitor's browser tab — never written to the server, invisible to others. Saved via **💾 配置 → 导出 / 导入** | Auto-saved to `data/profile.json` |
-| History | Per tab, download as CSV | Also appended to `data/history.csv` |
-| API key | Each visitor pastes **their own** key (billed to them) | Read from `.streamlit/secrets.toml` / `ANTHROPIC_API_KEY` |
+1. Fork 或 clone 本仓库。
+2. 打开 [share.streamlit.io](https://share.streamlit.io)，用 GitHub 登录 → **Create app**。
+3. 仓库选 `resume-match`，分支 `main`，主文件 `app.py` → Deploy。
+4. **不要**在 Secrets 里填 API key：每个访问者在侧边栏填自己的 [Anthropic API key](https://console.anthropic.com/settings/keys)，费用各算各的。
 
-The owner's key is **ignored in shared mode**, so a public deployment can never bill you for
-other people's usage.
+本地运行（会自动保存简历，并读取你自己的 key）：
 
-## Run locally
 ```bash
-git clone https://github.com/siruic2004/resume-match.git && cd resume-match
-python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # add your ANTHROPIC_API_KEY
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # 填入 ANTHROPIC_API_KEY
 JOBFIT_LOCAL=1 streamlit run app.py
 ```
 
-## Deploy free on Streamlit Community Cloud
-1. Push this repo to GitHub (`data/` and `secrets.toml` are git-ignored).
-2. share.streamlit.io → sign in with GitHub → **Create app** → pick the repo, main file `app.py`.
-3. **Don't** add an API key in Secrets and **don't** set `JOBFIT_LOCAL` — friends bring their own key.
-4. Share the `*.streamlit.app` link. Each visitor exports their config once and imports it next time.
+## 筛选规则（按顺序，前一步不过就停）
 
-## Use as a Claude Code skill (no UI, no API key)
-Copy `skill/job-fit/` into `~/.claude/skills/` and say *"这个岗位适合我吗 <url>"* in Claude Code.
+| 步骤 | 检查 | 不通过 |
+|---|---|---|
+| 1 | 要求美国公民 / 绿卡 / 永久工作许可 / 安全许可 / ITAR | 直接放弃，后面不再检查 |
+| 2 | 是否接受 OPT / CPT；提供 H-1B 最好 | 写明不 sponsor → 放弃（可关闭） |
+| 3 | 毕业时间（默认 2027 年 12 月）是否在要求范围内 | 放弃 |
+| 4 | 看 JD 里的技能要求而不是职位名称：DS 核心 / 可速成领域（金融、风控、营销、概率…）/ SDE 超纲（C++、后端开发…） | 必需的 SDE 技能缺失或匹配度低 → 放弃 |
 
-## Project layout
-```
-app.py               Streamlit UI
-jobfit/fetcher.py    URL → JD text (ATS APIs, JSON-LD, HTML)
-jobfit/rules.py      Regex screening for steps 1–3 + keyword skill fallback
-jobfit/llm.py        Claude structured-output assessment
-jobfit/pipeline.py   Step ordering, short-circuit, final verdict
-jobfit/profile.py    Per-visitor profile, config export/import, local-mode storage
-tests/               Rule tests (pytest)
-```
+## 两个版本对比
 
-## Tuning
-Edit the regex lists in `jobfit/rules.py` (e.g. add phrases you see in the wild) and the skill
-categories in `SYSTEM_PROMPT` in `jobfit/llm.py`. Run `pytest` after changes.
+| | 网页版 | Streamlit 版 |
+|---|---|---|
+| 输入 JD 链接 | ❌ 需手动粘贴 | ✅ Greenhouse / Lever / Ashby / Workday / LinkedIn / 官网 |
+| 上传简历 | 粘贴文本或 .txt | PDF / DOCX / TXT |
+| AI 费用 | 访问者自己的 Claude 账号 | 访问者自己的 API key |
+| 数据存储 | 访问者的浏览器 | 访问者的页面会话（本地模式存到 `data/`） |
+
+## 其他
+
+- **Claude Code 技能：** 把 `skill/job-fit/` 复制到 `~/.claude/skills/`，在 Claude Code 里发链接即可分析。
+- **代码结构：**
+  - `app.py`：Streamlit 界面
+  - `jobfit/`：抓取 JD、筛选规则、Claude 评分
+  - `web/jobfit.html`：网页版
+  - `tests/`：规则测试（运行 `pytest`）
+- **调整规则：** 改 `jobfit/rules.py` 里的正则；网页版的同一套规则在 `web/jobfit.html`，两边要一起改。
